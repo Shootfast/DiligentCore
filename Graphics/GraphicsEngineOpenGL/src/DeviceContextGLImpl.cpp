@@ -64,9 +64,8 @@ DeviceContextGLImpl::DeviceContextGLImpl(IReferenceCounters* pRefCounters, class
         pDeviceGL,
         bIsDeferred
     },
-    m_ContextState                       {pDeviceGL},
-    m_CommitedResourcesTentativeBarriers {0        },
-    m_DefaultFBO                         {false    }
+    m_ContextState{pDeviceGL},
+    m_DefaultFBO  {false    }
 // clang-format on
 {
     m_BoundWritableTextures.reserve(16);
@@ -173,7 +172,7 @@ void DeviceContextGLImpl::CommitShaderResources(IShaderResourceBinding* pShaderR
     if (m_CommitedResourcesTentativeBarriers != 0)
         LOG_INFO_MESSAGE("Not all tentative resource barriers have been executed since the last call to CommitShaderResources(). Did you forget to call Draw()/DispatchCompute() ?");
 
-    m_CommitedResourcesTentativeBarriers = 0;
+    m_CommitedResourcesTentativeBarriers = MEMORY_BARRIER_NONE;
     BindProgramResources(m_CommitedResourcesTentativeBarriers, pShaderResourceBinding);
     // m_CommitedResourcesTentativeBarriers will contain memory barriers that will be required
     // AFTER the actual draw/dispatch command is executed. Before that they have no meaning
@@ -464,7 +463,7 @@ void DeviceContextGLImpl::BeginSubpass()
 
             auto* const pColorTexGL = pRTV->GetTexture<TextureBaseGL>();
             pColorTexGL->TextureMemoryBarrier(
-                GL_FRAMEBUFFER_BARRIER_BIT, // Reads and writes via framebuffer object attachments after the
+                MEMORY_BARRIER_FRAMEBUFFER, // Reads and writes via framebuffer object attachments after the
                                             // barrier will reflect data written by shaders prior to the barrier.
                                             // Additionally, framebuffer writes issued after the barrier will wait
                                             // on the completion of all shader writes issued prior to the barrier.
@@ -488,7 +487,7 @@ void DeviceContextGLImpl::BeginSubpass()
             if (pDSV != nullptr)
             {
                 auto* pDepthTexGL = pDSV->GetTexture<TextureBaseGL>();
-                pDepthTexGL->TextureMemoryBarrier(GL_FRAMEBUFFER_BARRIER_BIT, m_ContextState);
+                pDepthTexGL->TextureMemoryBarrier(MEMORY_BARRIER_FRAMEBUFFER, m_ContextState);
 
                 const auto& AttachmentDesc = RPDesc.pAttachments[DepthAttachmentIndex];
                 auto        FirstLastUse   = m_pActiveRenderPass->GetAttachmentFirstLastUse(DepthAttachmentIndex);
@@ -634,7 +633,7 @@ void DeviceContextGLImpl::EndRenderPass()
     m_ContextState.InvalidateFBO();
 }
 
-void DeviceContextGLImpl::BindProgramResources(Uint32& NewMemoryBarriers, IShaderResourceBinding* pResBinding)
+void DeviceContextGLImpl::BindProgramResources(MEMORY_BARRIER& NewMemoryBarriers, IShaderResourceBinding* pResBinding)
 {
     auto*      pShaderResBindingGL = ValidatedCast<ShaderResourceBindingGLImpl>(pResBinding);
     const auto SRBIndex            = pShaderResBindingGL->GetBindingIndex();
@@ -661,8 +660,8 @@ void DeviceContextGLImpl::BindProgramResources(Uint32& NewMemoryBarriers, IShade
 
         auto* pBufferGL = UB.pBuffer.RawPtr<BufferGLImpl>();
         pBufferGL->BufferMemoryBarrier(
-            GL_UNIFORM_BARRIER_BIT, // Shader uniforms sourced from buffer objects after the barrier
-                                    // will reflect data written by shaders prior to the barrier
+            MEMORY_BARRIER_UNIFORM_BUFFER, // Shader uniforms sourced from buffer objects after the barrier
+                                           // will reflect data written by shaders prior to the barrier
             m_ContextState);
 
         m_ContextState.BindUniformBuffer(binding, pBufferGL->m_GlBuffer);
@@ -684,7 +683,7 @@ void DeviceContextGLImpl::BindProgramResources(Uint32& NewMemoryBarriers, IShade
             m_ContextState.BindTexture(s, pTexViewGL->GetBindTarget(), pTexViewGL->GetHandle());
 
             pTextureGL->TextureMemoryBarrier(
-                GL_TEXTURE_FETCH_BARRIER_BIT, // Texture fetches from shaders, including fetches from buffer object
+                MEMORY_BARRIER_TEXTURE_FETCH, // Texture fetches from shaders, including fetches from buffer object
                                               // memory via buffer textures, after the barrier will reflect data
                                               // written by shaders prior to the barrier
                 m_ContextState);
@@ -708,9 +707,9 @@ void DeviceContextGLImpl::BindProgramResources(Uint32& NewMemoryBarriers, IShade
             m_ContextState.BindSampler(binding, GLObjectWrappers::GLSamplerObj(false)); // Use default texture sampling parameters
 
             pBufferGL->BufferMemoryBarrier(
-                GL_TEXTURE_FETCH_BARRIER_BIT, // Texture fetches from shaders, including fetches from buffer object
-                                              // memory via buffer textures, after the barrier will reflect data
-                                              // written by shaders prior to the barrier
+                MEMORY_BARRIER_TEXEL_BUFFER, // Texture fetches from shaders, including fetches from buffer object
+                                             // memory via buffer textures, after the barrier will reflect data
+                                             // written by shaders prior to the barrier
                 m_ContextState);
         }
     }
@@ -735,12 +734,12 @@ void DeviceContextGLImpl::BindProgramResources(Uint32& NewMemoryBarriers, IShade
             if (ViewDesc.AccessFlags & UAV_ACCESS_FLAG_WRITE)
             {
                 pTextureGL->TextureMemoryBarrier(
-                    GL_SHADER_IMAGE_ACCESS_BARRIER_BIT, // Memory accesses using shader image load, store, and atomic built-in
-                                                        // functions issued after the barrier will reflect data written by shaders
-                                                        // prior to the barrier. Additionally, image stores and atomics issued after
-                                                        // the barrier will not execute until all memory accesses (e.g., loads,
-                                                        // stores, texture fetches, vertex fetches) initiated prior to the barrier
-                                                        // complete.
+                    MEMORY_BARRIER_STORAGE_IMAGE, // Memory accesses using shader image load, store, and atomic built-in
+                                                  // functions issued after the barrier will reflect data written by shaders
+                                                  // prior to the barrier. Additionally, image stores and atomics issued after
+                                                  // the barrier will not execute until all memory accesses (e.g., loads,
+                                                  // stores, texture fetches, vertex fetches) initiated prior to the barrier
+                                                  // complete.
                     m_ContextState);
                 // We cannot set pending memory barriers here, because
                 // if some texture is bound twice, the logic will fail
@@ -786,12 +785,12 @@ void DeviceContextGLImpl::BindProgramResources(Uint32& NewMemoryBarriers, IShade
             VERIFY(ViewDesc.ViewType == BUFFER_VIEW_UNORDERED_ACCESS, "Unexpected buffer view type");
 
             pBufferGL->BufferMemoryBarrier(
-                GL_SHADER_IMAGE_ACCESS_BARRIER_BIT, // Memory accesses using shader image load, store, and atomic built-in
-                                                    // functions issued after the barrier will reflect data written by shaders
-                                                    // prior to the barrier. Additionally, image stores and atomics issued after
-                                                    // the barrier will not execute until all memory accesses (e.g., loads,
-                                                    // stores, texture fetches, vertex fetches) initiated prior to the barrier
-                                                    // complete.
+                MEMORY_BARRIER_TEXEL_BUFFER_STORAGE, // Memory accesses using shader image load, store, and atomic built-in
+                                                     // functions issued after the barrier will reflect data written by shaders
+                                                     // prior to the barrier. Additionally, image stores and atomics issued after
+                                                     // the barrier will not execute until all memory accesses (e.g., loads,
+                                                     // stores, texture fetches, vertex fetches) initiated prior to the barrier
+                                                     // complete.
                 m_ContextState);
 
             m_BoundWritableBuffers.push_back(pBufferGL);
@@ -816,7 +815,7 @@ void DeviceContextGLImpl::BindProgramResources(Uint32& NewMemoryBarriers, IShade
 
         auto* pBufferGL = pBufferViewGL->GetBuffer<BufferGLImpl>();
         pBufferGL->BufferMemoryBarrier(
-            GL_SHADER_STORAGE_BARRIER_BIT, // Accesses to shader storage blocks after the barrier
+            MEMORY_BARRIER_STORAGE_BUFFER, // Accesses to shader storage blocks after the barrier
                                            // will reflect writes prior to the barrier
             m_ContextState);
 
@@ -832,26 +831,7 @@ void DeviceContextGLImpl::BindProgramResources(Uint32& NewMemoryBarriers, IShade
     // Go through the list of textures bound as AUVs and set the required memory barriers
     for (auto* pWritableTex : m_BoundWritableTextures)
     {
-        Uint32 TextureMemBarriers =
-            GL_TEXTURE_UPDATE_BARRIER_BIT // Writes to a texture via glTex(Sub)Image*, glCopyTex(Sub)Image*,
-                                          // glClearTex*Image, glCompressedTex(Sub)Image*, and reads via
-                                          // glGetTexImage() after the barrier will reflect data written by
-                                          // shaders prior to the barrier
-
-            | GL_TEXTURE_FETCH_BARRIER_BIT // Texture fetches from shaders, including fetches from buffer object
-                                           // memory via buffer textures, after the barrier will reflect data
-                                           // written by shaders prior to the barrier
-
-            | GL_PIXEL_BUFFER_BARRIER_BIT // Reads and writes of buffer objects via the GL_PIXEL_PACK_BUFFER and
-                                          // GL_PIXEL_UNPACK_BUFFER bidnings after the barrier will reflect data
-                                          // written by shaders prior to the barrier
-
-            | GL_FRAMEBUFFER_BARRIER_BIT // Reads and writes via framebuffer object attachments after the
-                                         // barrier will reflect data written by shaders prior to the barrier.
-                                         // Additionally, framebuffer writes issued after the barrier will wait
-                                         // on the completion of all shader writes issued prior to the barrier.
-
-            | GL_SHADER_IMAGE_ACCESS_BARRIER_BIT;
+        constexpr MEMORY_BARRIER TextureMemBarriers = MEMORY_BARRIER_ALL_TEXTURE_BARRIERS;
 
         NewMemoryBarriers |= TextureMemBarriers;
 
@@ -862,18 +842,7 @@ void DeviceContextGLImpl::BindProgramResources(Uint32& NewMemoryBarriers, IShade
 
     for (auto* pWritableBuff : m_BoundWritableBuffers)
     {
-        // clang-format off
-        Uint32 BufferMemoryBarriers =
-            GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT  |
-            GL_ELEMENT_ARRAY_BARRIER_BIT        |
-            GL_UNIFORM_BARRIER_BIT              |
-            GL_COMMAND_BARRIER_BIT              | 
-            GL_BUFFER_UPDATE_BARRIER_BIT        |
-            GL_CLIENT_MAPPED_BUFFER_BARRIER_BIT |
-            GL_SHADER_STORAGE_BARRIER_BIT       |
-            GL_TEXTURE_FETCH_BARRIER_BIT        |
-            GL_SHADER_IMAGE_ACCESS_BARRIER_BIT;
-        // clang-format on
+        constexpr MEMORY_BARRIER BufferMemoryBarriers = MEMORY_BARRIER_ALL_BUFFER_BARRIERS;
 
         NewMemoryBarriers |= BufferMemoryBarriers;
         // Set new required barriers for the time when buffer is used next time
@@ -948,7 +917,7 @@ void DeviceContextGLImpl::PostDraw()
     // m_CommitedResourcesTentativeBarriers contains memory barriers that will be required
     // AFTER the actual draw/dispatch command is executed.
     m_ContextState.SetPendingMemoryBarriers(m_CommitedResourcesTentativeBarriers);
-    m_CommitedResourcesTentativeBarriers = 0;
+    m_CommitedResourcesTentativeBarriers = MEMORY_BARRIER_NONE;
 }
 
 void DeviceContextGLImpl::Draw(const DrawAttribs& Attribs)
@@ -1028,11 +997,11 @@ void DeviceContextGLImpl::PrepareForIndirectDraw(IBuffer* pAttribsBuffer)
     // GL_DRAW_INDIRECT_BUFFER binding. Thus, any of indirect draw functions will fail if no buffer is
     // bound to that binding.
     pIndirectDrawAttribsGL->BufferMemoryBarrier(
-        GL_COMMAND_BARRIER_BIT, // Command data sourced from buffer objects by
-                                // Draw*Indirect and DispatchComputeIndirect commands after the barrier
-                                // will reflect data written by shaders prior to the barrier.The buffer
-                                // objects affected by this bit are derived from the DRAW_INDIRECT_BUFFER
-                                // and DISPATCH_INDIRECT_BUFFER bindings.
+        MEMORY_BARRIER_INDIRECT_BUFFER, // Command data sourced from buffer objects by
+                                        // Draw*Indirect and DispatchComputeIndirect commands after the barrier
+                                        // will reflect data written by shaders prior to the barrier.The buffer
+                                        // objects affected by this bit are derived from the DRAW_INDIRECT_BUFFER
+                                        // and DISPATCH_INDIRECT_BUFFER bindings.
         m_ContextState);
     constexpr bool ResetVAO = false; // GL_DRAW_INDIRECT_BUFFER does not affect VAO
     m_ContextState.BindBuffer(GL_DRAW_INDIRECT_BUFFER, pIndirectDrawAttribsGL->m_GlBuffer, ResetVAO);
@@ -1146,11 +1115,11 @@ void DeviceContextGLImpl::DispatchComputeIndirect(const DispatchComputeIndirectA
 
     auto* pBufferGL = ValidatedCast<BufferGLImpl>(pAttribsBuffer);
     pBufferGL->BufferMemoryBarrier(
-        GL_COMMAND_BARRIER_BIT, // Command data sourced from buffer objects by
-                                // Draw*Indirect and DispatchComputeIndirect commands after the barrier
-                                // will reflect data written by shaders prior to the barrier.The buffer
-                                // objects affected by this bit are derived from the DRAW_INDIRECT_BUFFER
-                                // and DISPATCH_INDIRECT_BUFFER bindings.
+        MEMORY_BARRIER_INDIRECT_BUFFER, // Command data sourced from buffer objects by
+                                        // Draw*Indirect and DispatchComputeIndirect commands after the barrier
+                                        // will reflect data written by shaders prior to the barrier.The buffer
+                                        // objects affected by this bit are derived from the DRAW_INDIRECT_BUFFER
+                                        // and DISPATCH_INDIRECT_BUFFER bindings.
         m_ContextState);
 
     constexpr bool ResetVAO = false; // GL_DISPATCH_INDIRECT_BUFFER does not affect VAO

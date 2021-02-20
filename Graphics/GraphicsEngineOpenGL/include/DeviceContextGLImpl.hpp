@@ -273,7 +273,7 @@ public:
     /// Implementation of IDeviceContextGL::UpdateCurrentGLContext().
     virtual bool DILIGENT_CALL_TYPE UpdateCurrentGLContext() override final;
 
-    void BindProgramResources(Uint32& NewMemoryBarriers, IShaderResourceBinding* pResBinding);
+    void BindProgramResources(MEMORY_BARRIER& NewMemoryBarriers, IShaderResourceBinding* pResBinding);
 
     GLContextState& GetContextState() { return m_ContextState; }
 
@@ -300,7 +300,6 @@ private:
     void BeginSubpass();
     void EndSubpass();
 
-    Uint32 m_CommitedResourcesTentativeBarriers = 0;
     struct SRBState
     {
 #ifdef DILIGENT_DEVELOPMENT
@@ -310,6 +309,8 @@ private:
         // Do not use strong references!
         std::array<ShaderResourceBindingGLImpl*, MAX_RESOURCE_SIGNATURES> SRBs = {};
     } m_BindInfo;
+
+    MEMORY_BARRIER m_CommitedResourcesTentativeBarriers = MEMORY_BARRIER_NONE;
 
     std::vector<class TextureBaseGL*> m_BoundWritableTextures;
     std::vector<class BufferGLImpl*>  m_BoundWritableBuffers;
