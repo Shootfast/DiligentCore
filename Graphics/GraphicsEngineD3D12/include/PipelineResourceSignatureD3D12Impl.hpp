@@ -53,10 +53,10 @@ class PipelineResourceSignatureD3D12Impl final : public PipelineResourceSignatur
 public:
     using TPipelineResourceSignatureBase = PipelineResourceSignatureBase<IPipelineResourceSignature, RenderDeviceD3D12Impl>;
 
-    PipelineResourceSignatureD3D12Impl(IReferenceCounters*                  pRefCounters,
-                                       RenderDeviceD3D12Impl*               pDevice,
-                                       const PipelineResourceSignatureDesc& Desc,
-                                       bool                                 bIsDeviceInternal = false);
+    PipelineResourceSignatureD3D12Impl(IReferenceCounters*                        pRefCounters,
+                                       RenderDeviceD3D12Impl*                     pDevice,
+                                       const PipelineResourceSignatureCreateInfo& CreateInfo,
+                                       bool                                       bIsDeviceInternal = false);
     ~PipelineResourceSignatureD3D12Impl();
 
     using CacheContentType = ShaderResourceCacheD3D12::CacheContentType;

@@ -62,13 +62,14 @@ inline bool ResourcesCompatible(const PipelineResourceSignatureD3D12Impl::Resour
 } // namespace
 
 
-PipelineResourceSignatureD3D12Impl::PipelineResourceSignatureD3D12Impl(IReferenceCounters*                  pRefCounters,
-                                                                       RenderDeviceD3D12Impl*               pDevice,
-                                                                       const PipelineResourceSignatureDesc& Desc,
-                                                                       bool                                 bIsDeviceInternal) :
-    TPipelineResourceSignatureBase{pRefCounters, pDevice, Desc, bIsDeviceInternal},
+PipelineResourceSignatureD3D12Impl::PipelineResourceSignatureD3D12Impl(IReferenceCounters*                        pRefCounters,
+                                                                       RenderDeviceD3D12Impl*                     pDevice,
+                                                                       const PipelineResourceSignatureCreateInfo& CreateInfo,
+                                                                       bool                                       bIsDeviceInternal) :
+    TPipelineResourceSignatureBase{pRefCounters, pDevice, CreateInfo.Desc, bIsDeviceInternal},
     m_SRBMemAllocator{GetRawAllocator()}
 {
+    const auto& Desc = CreateInfo.Desc;
     try
     {
         FixedLinearAllocator MemPool{GetRawAllocator()};

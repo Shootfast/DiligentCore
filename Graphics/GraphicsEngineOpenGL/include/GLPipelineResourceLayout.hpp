@@ -59,7 +59,7 @@
 // |                                             |           |                |         |                |        |                |           |
 // |    _______________________              ____V___________V________________V_________V________________V________V________________V___________V_____________
 // |   |                       |            |                           |                           |                           |                           |
-// '-->|GLProgramResourceCache |----------->|      Uinform Buffers      |          Samplers         |          Images           |       Storge Buffers      |
+// '-->|GLProgramResourceCache |----------->|      Uinform Buffers      |          Textures         |          Images           |       Storge Buffers      |
 //     |_______________________|            |___________________________|___________________________|___________________________|___________________________|
 //
 //
@@ -71,20 +71,20 @@
 
 #include "Object.h"
 #include "ShaderResourceVariableBase.hpp"
-#include "GLProgramResources.hpp"
 #include "GLProgramResourceCache.hpp"
+#include "PipelineResourceSignatureGLImpl.hpp"
 
 namespace Diligent
 {
 
+// sizeof(GLPipelineResourceLayout) == 32 (x64, msvc, Release)
 class GLPipelineResourceLayout
 {
 public:
-    GLPipelineResourceLayout(IObject& Owner) :
-        m_Owner(Owner)
-    {
-        m_ProgramIndex.fill(-1);
-    }
+    GLPipelineResourceLayout(IObject& Owner, GLProgramResourceCache& ResourceCache) :
+        m_Owner(Owner),
+        m_ResourceCache{ResourceCache}
+    {}
 
     ~GLPipelineResourceLayout();
 
@@ -96,47 +96,52 @@ public:
     GLPipelineResourceLayout& operator = (      GLPipelineResourceLayout&&) = delete;
     // clang-format on
 
-    void Initialize(GLProgramResources*                  ProgramResources,
-                    Uint32                               NumPrograms,
-                    PIPELINE_TYPE                        PipelineType,
-                    const PipelineResourceLayoutDesc&    ResourceLayout,
-                    const SHADER_RESOURCE_VARIABLE_TYPE* AllowedVarTypes,
-                    Uint32                               NumAllowedTypes,
-                    GLProgramResourceCache*              pResourceCache);
+    void Initialize(const PipelineResourceSignatureGLImpl& Signature,
+                    const SHADER_RESOURCE_VARIABLE_TYPE*   AllowedVarTypes,
+                    Uint32                                 NumAllowedTypes,
+                    SHADER_TYPE                            ShaderType);
 
-    static size_t GetRequiredMemorySize(GLProgramResources*                  ProgramResources,
-                                        Uint32                               NumPrograms,
-                                        const PipelineResourceLayoutDesc&    ResourceLayout,
-                                        const SHADER_RESOURCE_VARIABLE_TYPE* AllowedVarTypes,
-                                        Uint32                               NumAllowedTypes);
+    static size_t GetRequiredMemorySize(const PipelineResourceSignatureGLImpl& Signature,
+                                        const SHADER_RESOURCE_VARIABLE_TYPE*   AllowedVarTypes,
+                                        Uint32                                 NumAllowedTypes,
+                                        SHADER_TYPE                            ShaderType);
 
-    void CopyResources(GLProgramResourceCache& DstCache) const;
+    using ResourceAttribs = PipelineResourceSignatureGLImpl::ResourceAttribs;
+
+    const PipelineResourceDesc& GetResourceDesc(Uint32 Index) const
+    {
+        VERIFY_EXPR(m_pSignature);
+        return m_pSignature->GetResourceDesc(Index);
+    }
+    const ResourceAttribs& GetAttribs(Uint32 Index) const
+    {
+        VERIFY_EXPR(m_pSignature);
+        return m_pSignature->GetResourceAttribs(Index);
+    }
+
 
     struct GLVariableBase : public ShaderVariableBase<GLPipelineResourceLayout>
     {
         using TBase = ShaderVariableBase<GLPipelineResourceLayout>;
-        GLVariableBase(const GLProgramResources::GLResourceAttribs& ResourceAttribs,
-                       GLPipelineResourceLayout&                    ParentLayout,
-                       SHADER_RESOURCE_VARIABLE_TYPE                VariableType,
-                       Int32                                        ImtblSamplerIdx) :
-            // clang-format off
-            TBase             {ParentLayout},
-            m_Attribs         {ResourceAttribs },
-            m_VariableType    {VariableType    },
-            m_ImtblSamplerIdx {ImtblSamplerIdx}
-        // clang-format on
-        {
-            VERIFY_EXPR(ImtblSamplerIdx < 0 || ResourceAttribs.ResourceType == SHADER_RESOURCE_TYPE_TEXTURE_SRV);
-        }
+        GLVariableBase(GLPipelineResourceLayout& ParentLayout, Uint32 ResIndex) :
+            TBase{ParentLayout},
+            m_ResIndex{ResIndex}
+        {}
+
+        const PipelineResourceDesc& GetDesc() const { return m_ParentResLayout.GetResourceDesc(m_ResIndex); }
+        const ResourceAttribs&      GetAttribs() const { return m_ParentResLayout.GetAttribs(m_ResIndex); }
 
         virtual SHADER_RESOURCE_VARIABLE_TYPE DILIGENT_CALL_TYPE GetType() const override final
         {
-            return m_VariableType;
+            return GetDesc().VarType;
         }
 
         virtual void DILIGENT_CALL_TYPE GetResourceDesc(ShaderResourceDesc& ResourceDesc) const override final
         {
-            ResourceDesc = m_Attribs.GetResourceDesc();
+            const auto& Desc       = GetDesc();
+            ResourceDesc.Name      = Desc.Name;
+            ResourceDesc.Type      = Desc.ResourceType;
+            ResourceDesc.ArraySize = Desc.ArraySize;
         }
 
         virtual Uint32 DILIGENT_CALL_TYPE GetIndex() const override final
@@ -144,18 +149,14 @@ public:
             return m_ParentResLayout.GetVariableIndex(*this);
         }
 
-        const GLProgramResources::GLResourceAttribs& m_Attribs;
-        const SHADER_RESOURCE_VARIABLE_TYPE          m_VariableType;
-        const Int32                                  m_ImtblSamplerIdx;
+        const Uint32 m_ResIndex;
     };
 
 
     struct UniformBuffBindInfo final : GLVariableBase
     {
-        UniformBuffBindInfo(const GLProgramResources::GLResourceAttribs& ResourceAttribs,
-                            GLPipelineResourceLayout&                    ParentResLayout,
-                            SHADER_RESOURCE_VARIABLE_TYPE                VariableType) :
-            GLVariableBase{ResourceAttribs, ParentResLayout, VariableType, -1}
+        UniformBuffBindInfo(GLPipelineResourceLayout& ParentLayout, Uint32 ResIndex) :
+            GLVariableBase{ParentLayout, ResIndex}
         {}
 
         // Non-virtual function
@@ -170,26 +171,24 @@ public:
                                                  Uint32                FirstElement,
                                                  Uint32                NumElements) override final
         {
-            VerifyAndCorrectSetArrayArguments(m_Attribs.Name, m_Attribs.ArraySize, FirstElement, NumElements);
+            const auto& Desc = GetDesc();
+            VerifyAndCorrectSetArrayArguments(Desc.Name, Desc.ArraySize, FirstElement, NumElements);
             for (Uint32 elem = 0; elem < NumElements; ++elem)
                 BindResource(ppObjects[elem], FirstElement + elem);
         }
 
         virtual bool DILIGENT_CALL_TYPE IsBound(Uint32 ArrayIndex) const override final
         {
-            VERIFY_EXPR(ArrayIndex < m_Attribs.ArraySize);
-            return m_ParentResLayout.m_pResourceCache->IsUBBound(m_Attribs.Binding + ArrayIndex);
+            VERIFY_EXPR(ArrayIndex < GetDesc().ArraySize);
+            return m_ParentResLayout.m_ResourceCache.IsUBBound(GetAttribs().CacheOffset + ArrayIndex);
         }
     };
 
 
     struct SamplerBindInfo final : GLVariableBase
     {
-        SamplerBindInfo(const GLProgramResources::GLResourceAttribs& ResourceAttribs,
-                        GLPipelineResourceLayout&                    ParentResLayout,
-                        SHADER_RESOURCE_VARIABLE_TYPE                VariableType,
-                        Int32                                        ImtblSamplerIdx) :
-            GLVariableBase{ResourceAttribs, ParentResLayout, VariableType, ImtblSamplerIdx}
+        SamplerBindInfo(GLPipelineResourceLayout& ParentLayout, Uint32 ResIndex) :
+            GLVariableBase{ParentLayout, ResIndex}
         {}
 
         // Non-virtual function
@@ -204,25 +203,24 @@ public:
                                                  Uint32                FirstElement,
                                                  Uint32                NumElements) override final
         {
-            VerifyAndCorrectSetArrayArguments(m_Attribs.Name, m_Attribs.ArraySize, FirstElement, NumElements);
+            const auto& Desc = GetDesc();
+            VerifyAndCorrectSetArrayArguments(Desc.Name, Desc.ArraySize, FirstElement, NumElements);
             for (Uint32 elem = 0; elem < NumElements; ++elem)
                 BindResource(ppObjects[elem], FirstElement + elem);
         }
 
         virtual bool DILIGENT_CALL_TYPE IsBound(Uint32 ArrayIndex) const override final
         {
-            VERIFY_EXPR(ArrayIndex < m_Attribs.ArraySize);
-            return m_ParentResLayout.m_pResourceCache->IsSamplerBound(m_Attribs.Binding + ArrayIndex, m_Attribs.ResourceType == SHADER_RESOURCE_TYPE_TEXTURE_SRV);
+            VERIFY_EXPR(ArrayIndex < GetDesc().ArraySize);
+            return m_ParentResLayout.m_ResourceCache.IsTextureBound(GetAttribs().CacheOffset + ArrayIndex, GetDesc().ResourceType == SHADER_RESOURCE_TYPE_TEXTURE_SRV);
         }
     };
 
 
     struct ImageBindInfo final : GLVariableBase
     {
-        ImageBindInfo(const GLProgramResources::GLResourceAttribs& ResourceAttribs,
-                      GLPipelineResourceLayout&                    ParentResLayout,
-                      SHADER_RESOURCE_VARIABLE_TYPE                VariableType) :
-            GLVariableBase{ResourceAttribs, ParentResLayout, VariableType, -1}
+        ImageBindInfo(GLPipelineResourceLayout& ParentLayout, Uint32 ResIndex) :
+            GLVariableBase{ParentLayout, ResIndex}
         {}
 
         // Provide non-virtual function
@@ -237,25 +235,24 @@ public:
                                                  Uint32                FirstElement,
                                                  Uint32                NumElements) override final
         {
-            VerifyAndCorrectSetArrayArguments(m_Attribs.Name, m_Attribs.ArraySize, FirstElement, NumElements);
+            const auto& Desc = GetDesc();
+            VerifyAndCorrectSetArrayArguments(Desc.Name, Desc.ArraySize, FirstElement, NumElements);
             for (Uint32 elem = 0; elem < NumElements; ++elem)
                 BindResource(ppObjects[elem], FirstElement + elem);
         }
 
         virtual bool DILIGENT_CALL_TYPE IsBound(Uint32 ArrayIndex) const override final
         {
-            VERIFY_EXPR(ArrayIndex < m_Attribs.ArraySize);
-            return m_ParentResLayout.m_pResourceCache->IsImageBound(m_Attribs.Binding + ArrayIndex, m_Attribs.ResourceType == SHADER_RESOURCE_TYPE_TEXTURE_UAV);
+            VERIFY_EXPR(ArrayIndex < GetDesc().ArraySize);
+            return m_ParentResLayout.m_ResourceCache.IsImageBound(GetAttribs().CacheOffset + ArrayIndex, GetDesc().ResourceType == SHADER_RESOURCE_TYPE_TEXTURE_UAV);
         }
     };
 
 
     struct StorageBufferBindInfo final : GLVariableBase
     {
-        StorageBufferBindInfo(const GLProgramResources::GLResourceAttribs& ResourceAttribs,
-                              GLPipelineResourceLayout&                    ParentResLayout,
-                              SHADER_RESOURCE_VARIABLE_TYPE                VariableType) :
-            GLVariableBase{ResourceAttribs, ParentResLayout, VariableType, -1}
+        StorageBufferBindInfo(GLPipelineResourceLayout& ParentLayout, Uint32 ResIndex) :
+            GLVariableBase{ParentLayout, ResIndex}
         {}
 
         // Non-virtual function
@@ -270,37 +267,38 @@ public:
                                                  Uint32                FirstElement,
                                                  Uint32                NumElements) override final
         {
-            VerifyAndCorrectSetArrayArguments(m_Attribs.Name, m_Attribs.ArraySize, FirstElement, NumElements);
+            const auto& Desc = GetDesc();
+            VerifyAndCorrectSetArrayArguments(Desc.Name, Desc.ArraySize, FirstElement, NumElements);
             for (Uint32 elem = 0; elem < NumElements; ++elem)
                 BindResource(ppObjects[elem], FirstElement + elem);
         }
 
         virtual bool DILIGENT_CALL_TYPE IsBound(Uint32 ArrayIndex) const override final
         {
-            VERIFY_EXPR(ArrayIndex < m_Attribs.ArraySize);
-            return m_ParentResLayout.m_pResourceCache->IsSSBOBound(m_Attribs.Binding + ArrayIndex);
+            VERIFY_EXPR(ArrayIndex < GetDesc().ArraySize);
+            return m_ParentResLayout.m_ResourceCache.IsSSBOBound(GetAttribs().CacheOffset + ArrayIndex);
         }
     };
 
 
     // dbgResourceCache is only used for sanity check and as a remainder that the resource cache must be alive
     // while Layout is alive
-    void BindResources(SHADER_TYPE ShaderStage, IResourceMapping* pResourceMapping, Uint32 Flags, const GLProgramResourceCache& dbgResourceCache);
+    void BindResources(IResourceMapping* pResourceMapping, Uint32 Flags);
 
 #ifdef DILIGENT_DEVELOPMENT
     bool dvpVerifyBindings(const GLProgramResourceCache& ResourceCache) const;
 #endif
 
-    IShaderResourceVariable* GetShaderVariable(SHADER_TYPE ShaderStage, const Char* Name);
-    IShaderResourceVariable* GetShaderVariable(SHADER_TYPE ShaderStage, Uint32 Index);
+    IShaderResourceVariable* GetVariable(const Char* Name) const;
+    IShaderResourceVariable* GetVariable(Uint32 Index) const;
 
     IObject& GetOwner() { return m_Owner; }
 
-    Uint32 GetNumVariables(SHADER_TYPE ShaderStage) const;
+    Uint32 GetVariableCount() const;
 
     // clang-format off
-    Uint32 GetNumUBs()            const { return (m_SamplerOffset       - m_UBOffset)            / sizeof(UniformBuffBindInfo);    }
-    Uint32 GetNumSamplers()       const { return (m_ImageOffset         - m_SamplerOffset)       / sizeof(SamplerBindInfo);        }
+    Uint32 GetNumUBs()            const { return (m_TextureOffset       - m_UBOffset)            / sizeof(UniformBuffBindInfo);    }
+    Uint32 GetNumTextures()       const { return (m_ImageOffset         - m_TextureOffset)       / sizeof(SamplerBindInfo);        }
     Uint32 GetNumImages()         const { return (m_StorageBufferOffset - m_ImageOffset)         / sizeof(ImageBindInfo) ;         }
     Uint32 GetNumStorageBuffers() const { return (m_VariableEndOffset   - m_StorageBufferOffset) / sizeof(StorageBufferBindInfo);  }
     // clang-format on
@@ -318,51 +316,41 @@ public:
     Uint32 GetVariableIndex(const GLVariableBase& Var) const;
 
 private:
-    // clang-format off
-/* 0*/ IObject&                                       m_Owner;
-       // No need to use shared pointer, as the resource cache is either part of the same
-       // ShaderGLImpl object, or ShaderResourceBindingGLImpl object
-/* 8*/ GLProgramResourceCache*                        m_pResourceCache = nullptr;
-/*16*/ std::unique_ptr<void, STDDeleterRawMem<void> > m_ResourceBuffer;
-    
-       // Offsets in bytes
-       using OffsetType = Uint16;
-       static constexpr OffsetType m_UBOffset = 0;
-/*32*/ OffsetType m_SamplerOffset       = 0;
-/*34*/ OffsetType m_ImageOffset         = 0;
-/*36*/ OffsetType m_StorageBufferOffset = 0;
-/*38*/ OffsetType m_VariableEndOffset   = 0;
-/*40*/ std::array<Int8, MAX_SHADERS_IN_PIPELINE> m_ProgramIndex = {};
-/*45*/ Uint8      m_NumPrograms         = 0;
-/*46*/ Uint8      m_PipelineType        = 255u;
-/*47*/
-/*48*/ // End of structure
-    // clang-format on
+    struct ResourceCounters
+    {
+        Uint32 NumUBs           = 0;
+        Uint32 NumTextures      = 0;
+        Uint32 NumImages        = 0;
+        Uint32 NumStorageBlocks = 0;
+    };
+    static void CountResources(const PipelineResourceSignatureGLImpl& Signature,
+                               const SHADER_RESOURCE_VARIABLE_TYPE*   AllowedVarTypes,
+                               Uint32                                 NumAllowedTypes,
+                               SHADER_TYPE                            ShaderType,
+                               ResourceCounters&                      Counters);
+
+    template <typename HandlerType>
+    static void ProcessSignatureResources(const PipelineResourceSignatureGLImpl& Signature,
+                                          const SHADER_RESOURCE_VARIABLE_TYPE*   AllowedVarTypes,
+                                          Uint32                                 NumAllowedTypes,
+                                          SHADER_TYPE                            ShaderType,
+                                          HandlerType                            Handler);
+
+    // Offsets in bytes
+    using OffsetType = Uint16;
 
     template <typename ResourceType> OffsetType GetResourceOffset() const;
 
     template <typename ResourceType>
-    ResourceType& GetResource(Uint32 ResIndex)
+    ResourceType& GetResource(Uint32 ResIndex) const
     {
         VERIFY(ResIndex < GetNumResources<ResourceType>(), "Resource index (", ResIndex, ") exceeds max allowed value (", GetNumResources<ResourceType>() - 1, ")");
         auto Offset = GetResourceOffset<ResourceType>();
         return reinterpret_cast<ResourceType*>(reinterpret_cast<Uint8*>(m_ResourceBuffer.get()) + Offset)[ResIndex];
     }
 
-    GLProgramResources::ResourceCounters& GetProgramVarEndOffsets(Uint32 prog)
-    {
-        VERIFY_EXPR(prog < m_NumPrograms);
-        return reinterpret_cast<GLProgramResources::ResourceCounters*>(reinterpret_cast<Uint8*>(m_ResourceBuffer.get()) + m_VariableEndOffset)[prog];
-    }
-
-    const GLProgramResources::ResourceCounters& GetProgramVarEndOffsets(Uint32 prog) const
-    {
-        VERIFY_EXPR(prog < m_NumPrograms);
-        return reinterpret_cast<GLProgramResources::ResourceCounters*>(reinterpret_cast<Uint8*>(m_ResourceBuffer.get()) + m_VariableEndOffset)[prog];
-    }
-
     template <typename ResourceType>
-    IShaderResourceVariable* GetResourceByName(SHADER_TYPE ShaderStage, const Char* Name);
+    IShaderResourceVariable* GetResourceByName(const Char* Name) const;
 
     template <typename THandleUB,
               typename THandleSampler,
@@ -410,6 +398,21 @@ private:
 
     friend class ShaderVariableIndexLocator;
     friend class ShaderVariableLocator;
+
+private:
+    PipelineResourceSignatureGLImpl const* m_pSignature = nullptr;
+
+    IObject& m_Owner;
+    // No need to use shared pointer, as the resource cache is either part of the same
+    // ShaderGLImpl object, or ShaderResourceBindingGLImpl object
+    GLProgramResourceCache&                       m_ResourceCache;
+    std::unique_ptr<void, STDDeleterRawMem<void>> m_ResourceBuffer;
+
+    static constexpr OffsetType m_UBOffset            = 0;
+    OffsetType                  m_TextureOffset       = 0;
+    OffsetType                  m_ImageOffset         = 0;
+    OffsetType                  m_StorageBufferOffset = 0;
+    OffsetType                  m_VariableEndOffset   = 0;
 };
 
 
@@ -423,7 +426,7 @@ inline Uint32 GLPipelineResourceLayout::GetNumResources<GLPipelineResourceLayout
 template <>
 inline Uint32 GLPipelineResourceLayout::GetNumResources<GLPipelineResourceLayout::SamplerBindInfo>() const
 {
-    return GetNumSamplers();
+    return GetNumTextures();
 }
 
 template <>
@@ -451,7 +454,7 @@ template <>
 inline GLPipelineResourceLayout::OffsetType GLPipelineResourceLayout::
     GetResourceOffset<GLPipelineResourceLayout::SamplerBindInfo>() const
 {
-    return m_SamplerOffset;
+    return m_TextureOffset;
 }
 
 template <>

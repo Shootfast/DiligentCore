@@ -282,8 +282,8 @@ DILIGENT_BEGIN_INTERFACE(IRenderDevice, IObject)
     ///                             The function calls AddRef(), so that the new object will have
     ///                             one reference.
     VIRTUAL void METHOD(CreatePipelineResourceSignature)(THIS_
-                                                         const PipelineResourceSignatureDesc REF Desc,
-                                                         IPipelineResourceSignature**            ppSignature) PURE;
+                                                         const PipelineResourceSignatureCreateInfo REF CreateInfo,
+                                                         IPipelineResourceSignature**                  ppSignature) PURE;
 
 
     /// Gets the device capabilities, see Diligent::DeviceCaps for details

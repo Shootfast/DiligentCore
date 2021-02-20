@@ -34,10 +34,9 @@
 #include "GLObjectWrapper.hpp"
 #include "GLContext.hpp"
 #include "RenderDeviceGLImpl.hpp"
-#include "GLProgramResources.hpp"
 #include "GLPipelineResourceLayout.hpp"
-#include "GLProgramResourceCache.hpp"
 #include "ShaderGLImpl.hpp"
+#include "PipelineResourceSignatureGLImpl.hpp"
 
 namespace Diligent
 {
@@ -63,79 +62,66 @@ public:
     /// Queries the specific interface, see IObject::QueryInterface() for details
     virtual void DILIGENT_CALL_TYPE QueryInterface(const INTERFACE_ID& IID, IObject** ppInterface) override;
 
-    /// Implementation of IPipelineState::BindStaticResources() in OpenGL backend.
-    virtual void DILIGENT_CALL_TYPE BindStaticResources(Uint32            ShaderFlags,
-                                                        IResourceMapping* pResourceMapping,
-                                                        Uint32            Flags) override final;
+    /// Implementation of IPipelineState::GetResourceSignatureCount() in OpenGL backend.
+    virtual Uint32 DILIGENT_CALL_TYPE GetResourceSignatureCount() const override final { return m_SignatureCount; }
 
-    /// Implementation of IPipelineState::GetStaticVariableCount() in OpenGL backend.
-    virtual Uint32 DILIGENT_CALL_TYPE GetStaticVariableCount(SHADER_TYPE ShaderType) const override final;
-
-    /// Implementation of IPipelineState::GetStaticVariableByName() in OpenGL backend.
-    virtual IShaderResourceVariable* DILIGENT_CALL_TYPE GetStaticVariableByName(SHADER_TYPE ShaderType, const Char* Name) override final;
-
-    /// Implementation of IPipelineState::GetStaticVariableByIndex() in OpenGL backend.
-    virtual IShaderResourceVariable* DILIGENT_CALL_TYPE GetStaticVariableByIndex(SHADER_TYPE ShaderType, Uint32 Index) override final;
-
-    /// Implementation of IPipelineState::CreateShaderResourceBinding() in OpenGL backend.
-    virtual void DILIGENT_CALL_TYPE CreateShaderResourceBinding(IShaderResourceBinding** ppShaderResourceBinding,
-                                                                bool                     InitStaticResources) override final;
+    /// Implementation of IPipelineState::GetResourceSignature() in OpenGL backend.
+    virtual IPipelineResourceSignature* DILIGENT_CALL_TYPE GetResourceSignature(Uint32 Index) const override final
+    {
+        VERIFY_EXPR(Index < m_SignatureCount);
+        return m_Signatures[Index].RawPtr<IPipelineResourceSignature>();
+    }
 
     /// Implementation of IPipelineState::IsCompatibleWith() in OpenGL backend.
     virtual bool DILIGENT_CALL_TYPE IsCompatibleWith(const IPipelineState* pPSO) const override final;
 
     void CommitProgram(GLContextState& State);
 
-    void InitializeSRBResourceCache(GLProgramResourceCache& ResourceCache) const;
+    Uint32 GetSignatureCount() const { return m_SignatureCount; }
 
-    const GLPipelineResourceLayout& GetResourceLayout() const { return m_ResourceLayout; }
-    const GLPipelineResourceLayout& GetStaticResourceLayout() const { return m_StaticResourceLayout; }
-    const GLProgramResourceCache&   GetStaticResourceCache() const { return m_StaticResourceCache; }
+    PipelineResourceSignatureGLImpl* GetSignature(Uint32 index) const
+    {
+        VERIFY_EXPR(index < m_SignatureCount);
+        return m_Signatures[index].RawPtr<PipelineResourceSignatureGLImpl>();
+    }
 
 private:
     GLObjectWrappers::GLPipelineObj& GetGLProgramPipeline(GLContext::NativeGLContextType Context);
 
-    void InitImmutableSamplersInResourceCache(const GLPipelineResourceLayout& ResourceLayout, GLProgramResourceCache& Cache) const;
-
     template <typename PSOCreateInfoType>
-    void Initialize(const PSOCreateInfoType& CreateInfo, std::vector<ShaderGLImpl*>& Shaders);
+    void InitInternalObjects(const PSOCreateInfoType& CreateInfo, std::vector<ShaderGLImpl*>& Shaders);
 
-    void InitResourceLayouts(std::vector<ShaderGLImpl*>& Shaders,
-                             FixedLinearAllocator&       MemPool);
+    void InitResourceLayouts(const PipelineStateCreateInfo& CreateInfo,
+                             std::vector<ShaderGLImpl*>&    Shaders,
+                             SHADER_TYPE                    ActiveStages);
+
+    void CreateDefaultSignature(const PipelineStateCreateInfo& CreateInfo,
+                                std::vector<ShaderGLImpl*>&    ShaderStages,
+                                SHADER_TYPE                    ActiveStages,
+                                IPipelineResourceSignature**   ppSignature);
 
     void Destruct();
+
+    SHADER_TYPE GetShaderStageType(Uint32 Index) const;
+    Uint32      GetNumShaderStages() const { return m_NumPrograms; }
 
     // Linked GL programs for every shader stage. Every pipeline needs to have its own programs
     // because resource bindings assigned by GLProgramResources::LoadUniforms depend on other
     // shader stages.
     using GLProgramObj         = GLObjectWrappers::GLProgramObj;
-    GLProgramObj* m_GLPrograms = nullptr; // [m_NumShaderStages]
+    GLProgramObj* m_GLPrograms = nullptr; // [m_NumPrograms]
 
     ThreadingTools::LockFlag m_ProgPipelineLockFlag;
 
     std::vector<std::pair<GLContext::NativeGLContextType, GLObjectWrappers::GLPipelineObj>> m_GLProgPipelines;
 
-    // Resource layout that keeps variables of all types, but does not reference a
-    // resource cache.
-    // This layout is used by SRB objects to initialize only mutable and dynamic variables and by
-    // DeviceContextGLImpl::BindProgramResources to verify resource bindings.
-    GLPipelineResourceLayout m_ResourceLayout;
+    using SignatureArrayType            = std::array<RefCntAutoPtr<PipelineResourceSignatureGLImpl>, MAX_RESOURCE_SIGNATURES>;
+    SignatureArrayType m_Signatures     = {};
+    Uint8              m_SignatureCount = 0;
 
-    // Resource layout that only keeps static variables
-    GLPipelineResourceLayout m_StaticResourceLayout;
-    // Resource cache for static resource variables only
-    GLProgramResourceCache m_StaticResourceCache;
-
-    // Program resources for all shader stages in the pipeline
-    GLProgramResources* m_ProgramResources = nullptr; // [m_NumShaderStages]
-
-    Uint32 m_TotalUniformBufferBindings = 0;
-    Uint32 m_TotalSamplerBindings       = 0;
-    Uint32 m_TotalImageBindings         = 0;
-    Uint32 m_TotalStorageBufferBindings = 0;
-
-    using SamplerPtr                = RefCntAutoPtr<ISampler>;
-    SamplerPtr* m_ImmutableSamplers = nullptr; // [m_Desc.ResourceLayout.NumImmutableSamplers]
+    Uint8                      m_NumPrograms                = 0;
+    bool                       m_IsProgramPipelineSupported = false;
+    std::array<SHADER_TYPE, 5> m_ShaderTypes                = {};
 };
 
 } // namespace Diligent

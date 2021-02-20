@@ -268,13 +268,14 @@ RESOURCE_STATE DescriptorTypeToResourceState(DescriptorType Type)
 }
 
 
-PipelineResourceSignatureVkImpl::PipelineResourceSignatureVkImpl(IReferenceCounters*                  pRefCounters,
-                                                                 RenderDeviceVkImpl*                  pDevice,
-                                                                 const PipelineResourceSignatureDesc& Desc,
-                                                                 bool                                 bIsDeviceInternal) :
-    TPipelineResourceSignatureBase{pRefCounters, pDevice, Desc, bIsDeviceInternal},
+PipelineResourceSignatureVkImpl::PipelineResourceSignatureVkImpl(IReferenceCounters*                        pRefCounters,
+                                                                 RenderDeviceVkImpl*                        pDevice,
+                                                                 const PipelineResourceSignatureCreateInfo& CreateInfo,
+                                                                 bool                                       bIsDeviceInternal) :
+    TPipelineResourceSignatureBase{pRefCounters, pDevice, CreateInfo.Desc, bIsDeviceInternal},
     m_SRBMemAllocator{GetRawAllocator()}
 {
+    const auto& Desc = CreateInfo.Desc;
     try
     {
         FixedLinearAllocator MemPool{GetRawAllocator()};

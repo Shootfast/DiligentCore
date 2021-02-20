@@ -89,10 +89,10 @@ public:
     // Static/mutable and dynamic descriptor sets
     static constexpr Uint32 MAX_DESCRIPTOR_SETS = DESCRIPTOR_SET_ID_NUM_SETS;
 
-    PipelineResourceSignatureVkImpl(IReferenceCounters*                  pRefCounters,
-                                    RenderDeviceVkImpl*                  pDevice,
-                                    const PipelineResourceSignatureDesc& Desc,
-                                    bool                                 bIsDeviceInternal = false);
+    PipelineResourceSignatureVkImpl(IReferenceCounters*                        pRefCounters,
+                                    RenderDeviceVkImpl*                        pDevice,
+                                    const PipelineResourceSignatureCreateInfo& CreateInfo,
+                                    bool                                       bIsDeviceInternal = false);
     ~PipelineResourceSignatureVkImpl();
 
     Uint32 GetDynamicOffsetCount() const { return m_DynamicUniformBufferCount + m_DynamicStorageBufferCount; }

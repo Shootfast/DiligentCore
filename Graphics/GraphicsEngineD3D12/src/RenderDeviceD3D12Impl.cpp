@@ -821,20 +821,20 @@ void RenderDeviceD3D12Impl::CreateSBT(const ShaderBindingTableDesc& Desc,
                        });
 }
 
-void RenderDeviceD3D12Impl::CreatePipelineResourceSignature(const PipelineResourceSignatureDesc& Desc,
-                                                            IPipelineResourceSignature**         ppSignature)
+void RenderDeviceD3D12Impl::CreatePipelineResourceSignature(const PipelineResourceSignatureCreateInfo& CreateInfo,
+                                                            IPipelineResourceSignature**               ppSignature)
 {
-    CreatePipelineResourceSignature(Desc, ppSignature, false);
+    CreatePipelineResourceSignature(CreateInfo, ppSignature, false);
 }
 
-void RenderDeviceD3D12Impl::CreatePipelineResourceSignature(const PipelineResourceSignatureDesc& Desc,
-                                                            IPipelineResourceSignature**         ppSignature,
-                                                            bool                                 IsDeviceInternal)
+void RenderDeviceD3D12Impl::CreatePipelineResourceSignature(const PipelineResourceSignatureCreateInfo& CreateInfo,
+                                                            IPipelineResourceSignature**               ppSignature,
+                                                            bool                                       IsDeviceInternal)
 {
-    CreateDeviceObject("PipelineResourceSignature", Desc, ppSignature,
+    CreateDeviceObject("PipelineResourceSignature", CreateInfo.Desc, ppSignature,
                        [&]() //
                        {
-                           PipelineResourceSignatureD3D12Impl* pPRSD3D12(NEW_RC_OBJ(m_PipeResSignAllocator, "PipelineResourceSignatureD3D12Impl instance", PipelineResourceSignatureD3D12Impl)(this, Desc, IsDeviceInternal));
+                           PipelineResourceSignatureD3D12Impl* pPRSD3D12(NEW_RC_OBJ(m_PipeResSignAllocator, "PipelineResourceSignatureD3D12Impl instance", PipelineResourceSignatureD3D12Impl)(this, CreateInfo, IsDeviceInternal));
                            pPRSD3D12->QueryInterface(IID_PipelineResourceSignature, reinterpret_cast<IObject**>(ppSignature));
                            OnCreateDeviceObject(pPRSD3D12);
                        });

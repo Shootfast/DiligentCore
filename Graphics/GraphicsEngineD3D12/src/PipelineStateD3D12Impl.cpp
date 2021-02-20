@@ -502,17 +502,17 @@ RefCntAutoPtr<IPipelineResourceSignature> PipelineStateD3D12Impl::CreateDefaultR
     RefCntAutoPtr<IPipelineResourceSignature> pImplicitSignature;
     if (Resources.size())
     {
-        PipelineResourceSignatureDesc ResSignDesc;
-        ResSignDesc.Resources                  = Resources.data();
-        ResSignDesc.NumResources               = static_cast<Uint32>(Resources.size());
-        ResSignDesc.ImmutableSamplers          = LayoutDesc.ImmutableSamplers;
-        ResSignDesc.NumImmutableSamplers       = LayoutDesc.NumImmutableSamplers;
-        ResSignDesc.BindingIndex               = 0;
-        ResSignDesc.SRBAllocationGranularity   = CreateInfo.PSODesc.SRBAllocationGranularity;
-        ResSignDesc.UseCombinedTextureSamplers = pCombinedSamplerSuffix != nullptr;
-        ResSignDesc.CombinedSamplerSuffix      = pCombinedSamplerSuffix;
+        PipelineResourceSignatureCreateInfo ResSignCI;
+        ResSignCI.Desc.Resources                  = Resources.data();
+        ResSignCI.Desc.NumResources               = static_cast<Uint32>(Resources.size());
+        ResSignCI.Desc.ImmutableSamplers          = LayoutDesc.ImmutableSamplers;
+        ResSignCI.Desc.NumImmutableSamplers       = LayoutDesc.NumImmutableSamplers;
+        ResSignCI.Desc.BindingIndex               = 0;
+        ResSignCI.Desc.SRBAllocationGranularity   = CreateInfo.PSODesc.SRBAllocationGranularity;
+        ResSignCI.Desc.UseCombinedTextureSamplers = pCombinedSamplerSuffix != nullptr;
+        ResSignCI.Desc.CombinedSamplerSuffix      = pCombinedSamplerSuffix;
 
-        pDevice->CreatePipelineResourceSignature(ResSignDesc, &pImplicitSignature, true);
+        pDevice->CreatePipelineResourceSignature(ResSignCI, &pImplicitSignature, true);
 
         if (!pImplicitSignature)
             LOG_ERROR_AND_THROW("Failed to create resource signature for pipeline state");
@@ -539,43 +539,7 @@ void PipelineStateD3D12Impl::InitRootSignature(const PipelineStateCreateInfo& Cr
     }
     else
     {
-        Uint32 MaxSignatureBindingIndex = 0;
-        for (Uint32 i = 0; i < CreateInfo.ResourceSignaturesCount; ++i)
-        {
-            auto* pSignature = ValidatedCast<PipelineResourceSignatureD3D12Impl>(CreateInfo.ppResourceSignatures[i]);
-            VERIFY(pSignature != nullptr, "Pipeline resource signature at index ", i, " is null. This error should've been caught by ValidatePipelineResourceSignatures.");
-            MaxSignatureBindingIndex = std::max(MaxSignatureBindingIndex, Uint32{pSignature->GetDesc().BindingIndex});
-        }
-        SignatureCount = MaxSignatureBindingIndex + 1;
-        m_ResourceSignatures.reset(new RefCntAutoPtr<PipelineResourceSignatureD3D12Impl>[SignatureCount]);
-
-        // TODO: move to base class
-        const auto PipelineType = CreateInfo.PSODesc.PipelineType;
-        for (Uint32 i = 0; i < CreateInfo.ResourceSignaturesCount; ++i)
-        {
-            auto* pSignature = ValidatedCast<PipelineResourceSignatureD3D12Impl>(CreateInfo.ppResourceSignatures[i]);
-            VERIFY(pSignature != nullptr, "Pipeline resource signature at index ", i, " is null. This error should've been caught by ValidatePipelineResourceSignatures.");
-
-            const auto Index = pSignature->GetDesc().BindingIndex;
-
-#ifdef DILIGENT_DEBUG
-            VERIFY(m_ResourceSignatures[Index] == nullptr,
-                   "Pipeline resource signature '", pSignature->GetDesc().Name, "' at index ", Uint32{Index},
-                   " conflicts with another resource signature '", m_ResourceSignatures[Index]->GetDesc().Name,
-                   "' that uses the same index. This error should've been caught by ValidatePipelineResourceSignatures.");
-
-            for (Uint32 s = 0, StageCount = pSignature->GetNumActiveShaderStages(); s < StageCount; ++s)
-            {
-                const auto ShaderType = pSignature->GetActiveShaderStageType(s);
-                VERIFY(IsConsistentShaderType(ShaderType, PipelineType),
-                       "Pipeline resource signature '", pSignature->GetDesc().Name, "' at index ", Uint32{Index},
-                       " has shader stage '", GetShaderTypeLiteralName(ShaderType), "' that is not compatible with pipeline type '",
-                       GetPipelineTypeString(PipelineType), "'.");
-            }
-#endif
-
-            m_ResourceSignatures[Index] = pSignature;
-        }
+        //PipelineResourceSignatureD3D12Impl::CopyResourceSignatures(CreateInfo.PSODesc.PipelineType, SignatureCount, CreateInfo.ppResourceSignatures, m_Signatures, m_SignatureCount);
     }
 
     m_RootSig = GetDevice()->GetRootSignatureCache().GetRootSig(m_ResourceSignatures.get(), SignatureCount);

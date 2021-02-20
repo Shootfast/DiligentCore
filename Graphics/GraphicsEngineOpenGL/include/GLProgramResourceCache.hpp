@@ -37,7 +37,7 @@ namespace Diligent
 /// The class implements a cache that holds resources bound to a specific GL program
 // All resources are stored in the continuous memory using the following layout:
 //
-//   |        Cached UBs        |     Cached Samplers     |       Cached Images      | Cached Storage Blocks     |
+//   |        Cached UBs        |     Cached Textures     |       Cached Images      | Cached Storage Blocks     |
 //   |----------------------------------------------------|--------------------------|---------------------------|
 //   |  0 | 1 | ... | UBCount-1 | 0 | 1 | ...| SmpCount-1 | 0 | 1 | ... | ImgCount-1 | 0 | 1 |  ... | SBOCount-1 |
 //    -----------------------------------------------------------------------------------------------------------
@@ -113,123 +113,123 @@ public:
     };
 
 
-    static size_t GetRequriedMemorySize(Uint32 UBCount, Uint32 SamplerCount, Uint32 ImageCount, Uint32 SSBOCount);
+    static size_t GetRequriedMemorySize(Uint32 UBCount, Uint32 TextureCount, Uint32 ImageCount, Uint32 SSBOCount);
 
-    void Initialize(Uint32 UBCount, Uint32 SamplerCount, Uint32 ImageCount, Uint32 SSBOCount, IMemoryAllocator& MemAllocator);
+    void Initialize(Uint32 UBCount, Uint32 TextureCount, Uint32 ImageCount, Uint32 SSBOCount, IMemoryAllocator& MemAllocator);
     void Destroy(IMemoryAllocator& MemAllocator);
 
-    void SetUniformBuffer(Uint32 Binding, RefCntAutoPtr<BufferGLImpl>&& pBuff)
+    void SetUniformBuffer(Uint32 CacheOffset, RefCntAutoPtr<BufferGLImpl>&& pBuff)
     {
-        GetUB(Binding).pBuffer = std::move(pBuff);
+        GetUB(CacheOffset).pBuffer = std::move(pBuff);
     }
 
-    void SetTexSampler(Uint32 Binding, RefCntAutoPtr<TextureViewGLImpl>&& pTexView, bool SetSampler)
+    void SetTexture(Uint32 CacheOffset, RefCntAutoPtr<TextureViewGLImpl>&& pTexView, bool SetSampler)
     {
-        GetSampler(Binding).Set(std::move(pTexView), SetSampler);
+        GetTexture(CacheOffset).Set(std::move(pTexView), SetSampler);
     }
 
-    void SetImmutableSampler(Uint32 Binding, ISampler* pImtblSampler)
+    void SetSampler(Uint32 CacheOffset, ISampler* pSampler)
     {
-        GetSampler(Binding).pSampler = ValidatedCast<SamplerGLImpl>(pImtblSampler);
+        GetTexture(CacheOffset).pSampler = ValidatedCast<SamplerGLImpl>(pSampler);
     }
 
-    void CopySampler(Uint32 Binding, const CachedResourceView& SrcSam)
+    void SetTexelBuffer(Uint32 CacheOffset, RefCntAutoPtr<BufferViewGLImpl>&& pBuffView)
     {
-        GetSampler(Binding) = SrcSam;
+        GetTexture(CacheOffset).Set(std::move(pBuffView));
     }
 
-    void SetBufSampler(Uint32 Binding, RefCntAutoPtr<BufferViewGLImpl>&& pBuffView)
+    void SetTexImage(Uint32 CacheOffset, RefCntAutoPtr<TextureViewGLImpl>&& pTexView)
     {
-        GetSampler(Binding).Set(std::move(pBuffView));
+        GetImage(CacheOffset).Set(std::move(pTexView), false);
     }
 
-    void SetTexImage(Uint32 Binding, RefCntAutoPtr<TextureViewGLImpl>&& pTexView)
+    void SetBufImage(Uint32 CacheOffset, RefCntAutoPtr<BufferViewGLImpl>&& pBuffView)
     {
-        GetImage(Binding).Set(std::move(pTexView), false);
+        GetImage(CacheOffset).Set(std::move(pBuffView));
     }
 
-    void SetBufImage(Uint32 Binding, RefCntAutoPtr<BufferViewGLImpl>&& pBuffView)
+    void SetSSBO(Uint32 CacheOffset, RefCntAutoPtr<BufferViewGLImpl>&& pBuffView)
     {
-        GetImage(Binding).Set(std::move(pBuffView));
+        GetSSBO(CacheOffset).pBufferView = std::move(pBuffView);
     }
 
-    void CopyImage(Uint32 Binding, const CachedResourceView& SrcImg)
+    void CopyTexture(Uint32 Binding, const CachedResourceView& SrcSam)
     {
-        GetImage(Binding) = SrcImg;
+        GetTexture(Binding) = SrcSam;
     }
 
-    void SetSSBO(Uint32 Binding, RefCntAutoPtr<BufferViewGLImpl>&& pBuffView)
+    void CopyImage(Uint32 CacheOffset, const CachedResourceView& SrcImg)
     {
-        GetSSBO(Binding).pBufferView = std::move(pBuffView);
+        GetImage(CacheOffset) = SrcImg;
     }
 
-    bool IsUBBound(Uint32 Binding) const
+    bool IsUBBound(Uint32 CacheOffset) const
     {
-        if (Binding >= GetUBCount())
+        if (CacheOffset >= GetUBCount())
             return false;
 
-        const auto& UB = GetConstUB(Binding);
+        const auto& UB = GetConstUB(CacheOffset);
         return UB.pBuffer;
     }
 
-    bool IsSamplerBound(Uint32 Binding, bool dbgIsTextureView) const
+    bool IsTextureBound(Uint32 CacheOffset, bool dbgIsTextureView) const
     {
-        if (Binding >= GetSamplerCount())
+        if (CacheOffset >= GetTextureCount())
             return false;
 
-        const auto& Sampler = GetConstSampler(Binding);
-        VERIFY_EXPR(dbgIsTextureView || Sampler.pTexture == nullptr);
-        return Sampler.pView;
+        const auto& Texture = GetConstTexture(CacheOffset);
+        VERIFY_EXPR(dbgIsTextureView || Texture.pTexture == nullptr);
+        return Texture.pView;
     }
 
-    bool IsImageBound(Uint32 Binding, bool dbgIsTextureView) const
+    bool IsImageBound(Uint32 CacheOffset, bool dbgIsTextureView) const
     {
-        if (Binding >= GetImageCount())
+        if (CacheOffset >= GetImageCount())
             return false;
 
-        const auto& Image = GetConstImage(Binding);
+        const auto& Image = GetConstImage(CacheOffset);
         VERIFY_EXPR(dbgIsTextureView || Image.pTexture == nullptr);
         return Image.pView;
     }
 
-    bool IsSSBOBound(Uint32 Binding) const
+    bool IsSSBOBound(Uint32 CacheOffset) const
     {
-        if (Binding >= GetSSBOCount())
+        if (CacheOffset >= GetSSBOCount())
             return false;
 
-        const auto& SSBO = GetConstSSBO(Binding);
+        const auto& SSBO = GetConstSSBO(CacheOffset);
         return SSBO.pBufferView;
     }
 
     // clang-format off
-    Uint32 GetUBCount()      const { return (m_SmplrsOffset    - m_UBsOffset)    / sizeof(CachedUB);            }
-    Uint32 GetSamplerCount() const { return (m_ImgsOffset      - m_SmplrsOffset) / sizeof(CachedResourceView);  }
-    Uint32 GetImageCount()   const { return (m_SSBOsOffset     - m_ImgsOffset)   / sizeof(CachedResourceView);  }
-    Uint32 GetSSBOCount()    const { return (m_MemoryEndOffset - m_SSBOsOffset)  / sizeof(CachedSSBO);          }
+    Uint32 GetUBCount()      const { return (m_TexturesOffset  - m_UBsOffset)      / sizeof(CachedUB);            }
+    Uint32 GetTextureCount() const { return (m_ImagesOffset    - m_TexturesOffset) / sizeof(CachedResourceView);  }
+    Uint32 GetImageCount()   const { return (m_SSBOsOffset     - m_ImagesOffset)   / sizeof(CachedResourceView);  }
+    Uint32 GetSSBOCount()    const { return (m_MemoryEndOffset - m_SSBOsOffset)    / sizeof(CachedSSBO);          }
     // clang-format on
 
-    const CachedUB& GetConstUB(Uint32 Binding) const
+    const CachedUB& GetConstUB(Uint32 CacheOffset) const
     {
-        VERIFY(Binding < GetUBCount(), "Uniform buffer binding (", Binding, ") is out of range");
-        return reinterpret_cast<CachedUB*>(m_pResourceData + m_UBsOffset)[Binding];
+        VERIFY(CacheOffset < GetUBCount(), "Uniform buffer index (", CacheOffset, ") is out of range");
+        return reinterpret_cast<CachedUB*>(m_pResourceData + m_UBsOffset)[CacheOffset];
     }
 
-    const CachedResourceView& GetConstSampler(Uint32 Binding) const
+    const CachedResourceView& GetConstTexture(Uint32 CacheOffset) const
     {
-        VERIFY(Binding < GetSamplerCount(), "Sampler binding (", Binding, ") is out of range");
-        return reinterpret_cast<CachedResourceView*>(m_pResourceData + m_SmplrsOffset)[Binding];
+        VERIFY(CacheOffset < GetTextureCount(), "Texture index (", CacheOffset, ") is out of range");
+        return reinterpret_cast<CachedResourceView*>(m_pResourceData + m_TexturesOffset)[CacheOffset];
     }
 
-    const CachedResourceView& GetConstImage(Uint32 Binding) const
+    const CachedResourceView& GetConstImage(Uint32 CacheOffset) const
     {
-        VERIFY(Binding < GetImageCount(), "Image buffer binding (", Binding, ") is out of range");
-        return reinterpret_cast<CachedResourceView*>(m_pResourceData + m_ImgsOffset)[Binding];
+        VERIFY(CacheOffset < GetImageCount(), "Image buffer index (", CacheOffset, ") is out of range");
+        return reinterpret_cast<CachedResourceView*>(m_pResourceData + m_ImagesOffset)[CacheOffset];
     }
 
-    const CachedSSBO& GetConstSSBO(Uint32 Binding) const
+    const CachedSSBO& GetConstSSBO(Uint32 CacheOffset) const
     {
-        VERIFY(Binding < GetSSBOCount(), "Shader storage block binding (", Binding, ") is out of range");
-        return reinterpret_cast<CachedSSBO*>(m_pResourceData + m_SSBOsOffset)[Binding];
+        VERIFY(CacheOffset < GetSSBOCount(), "Shader storage block index (", CacheOffset, ") is out of range");
+        return reinterpret_cast<CachedSSBO*>(m_pResourceData + m_SSBOsOffset)[CacheOffset];
     }
 
     bool IsInitialized() const
@@ -238,31 +238,31 @@ public:
     }
 
 private:
-    CachedUB& GetUB(Uint32 Binding)
+    CachedUB& GetUB(Uint32 CacheOffset)
     {
-        return const_cast<CachedUB&>(const_cast<const GLProgramResourceCache*>(this)->GetConstUB(Binding));
+        return const_cast<CachedUB&>(const_cast<const GLProgramResourceCache*>(this)->GetConstUB(CacheOffset));
     }
 
-    CachedResourceView& GetSampler(Uint32 Binding)
+    CachedResourceView& GetTexture(Uint32 CacheOffset)
     {
-        return const_cast<CachedResourceView&>(const_cast<const GLProgramResourceCache*>(this)->GetConstSampler(Binding));
+        return const_cast<CachedResourceView&>(const_cast<const GLProgramResourceCache*>(this)->GetConstTexture(CacheOffset));
     }
 
-    CachedResourceView& GetImage(Uint32 Binding)
+    CachedResourceView& GetImage(Uint32 CacheOffset)
     {
-        return const_cast<CachedResourceView&>(const_cast<const GLProgramResourceCache*>(this)->GetConstImage(Binding));
+        return const_cast<CachedResourceView&>(const_cast<const GLProgramResourceCache*>(this)->GetConstImage(CacheOffset));
     }
 
-    CachedSSBO& GetSSBO(Uint32 Binding)
+    CachedSSBO& GetSSBO(Uint32 CacheOffset)
     {
-        return const_cast<CachedSSBO&>(const_cast<const GLProgramResourceCache*>(this)->GetConstSSBO(Binding));
+        return const_cast<CachedSSBO&>(const_cast<const GLProgramResourceCache*>(this)->GetConstSSBO(CacheOffset));
     }
 
     static constexpr const Uint16 InvalidResourceOffset = 0xFFFF;
     static constexpr const Uint16 m_UBsOffset           = 0;
 
-    Uint16 m_SmplrsOffset    = InvalidResourceOffset;
-    Uint16 m_ImgsOffset      = InvalidResourceOffset;
+    Uint16 m_TexturesOffset  = InvalidResourceOffset;
+    Uint16 m_ImagesOffset    = InvalidResourceOffset;
     Uint16 m_SSBOsOffset     = InvalidResourceOffset;
     Uint16 m_MemoryEndOffset = InvalidResourceOffset;
 

@@ -597,13 +597,24 @@ void GLProgramResources::LoadUniforms(SHADER_TYPE                           Shad
         }
         else
         {
-            LOG_WARNING_MESSAGE("glShaderStorageBlockBinding is not available on this device and "
-                                "the engine is unable to automatically assign shader storage block bindindg for '",
-                                Name.data(), "' variable. Expected binding: ", StorageBufferBinding,
-                                ". Make sure that this binding is explicitly assigned in shader source code."
-                                " Note that if the source code is converted from HLSL and if storage blocks are only used"
-                                " by a single shader stage, then bindings automatically assigned by HLSL->GLSL"
-                                " converter will work fine.");
+            const GLenum props[]                 = {GL_BUFFER_BINDING};
+            GLint        params[_countof(props)] = {};
+            glGetProgramResourceiv(GLProgram, GL_SHADER_STORAGE_BLOCK, SBIndex, _countof(props), props, _countof(params), nullptr, params);
+            CHECK_GL_ERROR("glGetProgramResourceiv() failed");
+
+            if (IsNewBlock)
+                StorageBlocks.back().Binding = static_cast<Uint32>(params[0]);
+
+            if (StorageBufferBinding != static_cast<Uint32>(params[0]))
+            {
+                LOG_WARNING_MESSAGE("glShaderStorageBlockBinding is not available on this device and "
+                                    "the engine is unable to automatically assign shader storage block bindindg for '",
+                                    Name.data(), "' variable. Expected binding: ", StorageBufferBinding, ", actual binding: ", params[0],
+                                    ". Make sure that this binding is explicitly assigned in shader source code."
+                                    " Note that if the source code is converted from HLSL and if storage blocks are only used"
+                                    " by a single shader stage, then bindings automatically assigned by HLSL->GLSL"
+                                    " converter will work fine.");
+            }
         }
         ++StorageBufferBinding;
     }
@@ -638,110 +649,6 @@ ShaderResourceDesc GLProgramResources::GetResourceDesc(Uint32 Index) const
 
     LOG_ERROR_MESSAGE("Resource index ", Index + GetVariableCount(), " is invalid");
     return ShaderResourceDesc{};
-}
-
-void GLProgramResources::CountResources(const PipelineResourceLayoutDesc&    ResourceLayout,
-                                        const SHADER_RESOURCE_VARIABLE_TYPE* AllowedVarTypes,
-                                        Uint32                               NumAllowedTypes,
-                                        ResourceCounters&                    Counters) const
-{
-    // clang-format off
-    ProcessConstResources(
-        [&](const GLProgramResources::UniformBufferInfo& UB)
-        {
-            ++Counters.NumUBs;
-        },
-        [&](const GLProgramResources::SamplerInfo& Sam)
-        {
-            ++Counters.NumSamplers;
-        },
-        [&](const GLProgramResources::ImageInfo& Img)
-        {
-            ++Counters.NumImages;
-        },
-        [&](const GLProgramResources::StorageBlockInfo& SB)
-        {
-            ++Counters.NumStorageBlocks;
-        },
-        &ResourceLayout,
-        AllowedVarTypes,
-        NumAllowedTypes
-    );
-    // clang-format on
-}
-
-bool GLProgramResources::IsCompatibleWith(const GLProgramResources& Res) const
-{
-    // clang-format off
-    if (GetNumUniformBuffers() != Res.GetNumUniformBuffers() ||
-        GetNumSamplers()       != Res.GetNumSamplers()       ||
-        GetNumImages()         != Res.GetNumImages()         ||
-        GetNumStorageBlocks()  != Res.GetNumStorageBlocks())
-        return false;
-    // clang-format on
-
-    for (Uint32 ub = 0; ub < GetNumUniformBuffers(); ++ub)
-    {
-        const auto& UB0 = GetUniformBuffer(ub);
-        const auto& UB1 = Res.GetUniformBuffer(ub);
-        if (!UB0.IsCompatibleWith(UB1))
-            return false;
-    }
-
-    for (Uint32 sam = 0; sam < GetNumSamplers(); ++sam)
-    {
-        const auto& Sam0 = GetSampler(sam);
-        const auto& Sam1 = Res.GetSampler(sam);
-        if (!Sam0.IsCompatibleWith(Sam1))
-            return false;
-    }
-
-    for (Uint32 img = 0; img < GetNumImages(); ++img)
-    {
-        const auto& Img0 = GetImage(img);
-        const auto& Img1 = Res.GetImage(img);
-        if (!Img0.IsCompatibleWith(Img1))
-            return false;
-    }
-
-    for (Uint32 sb = 0; sb < GetNumStorageBlocks(); ++sb)
-    {
-        const auto& SB0 = GetStorageBlock(sb);
-        const auto& SB1 = Res.GetStorageBlock(sb);
-        if (!SB0.IsCompatibleWith(SB1))
-            return false;
-    }
-
-    return true;
-}
-
-
-size_t GLProgramResources::GetHash() const
-{
-    size_t hash = ComputeHash(GetNumUniformBuffers(), GetNumSamplers(), GetNumImages(), GetNumStorageBlocks());
-
-    // clang-format off
-    ProcessConstResources(
-        [&](const UniformBufferInfo& UB)
-        {
-            HashCombine(hash, UB.GetHash());
-        },
-        [&](const SamplerInfo& Sam)
-        {
-            HashCombine(hash, Sam.GetHash());
-        },
-        [&](const ImageInfo& Img)
-        {
-            HashCombine(hash, Img.GetHash());
-        },
-        [&](const StorageBlockInfo& SB)
-        {
-            HashCombine(hash, SB.GetHash());
-        }
-    );
-    // clang-format on
-
-    return hash;
 }
 
 } // namespace Diligent

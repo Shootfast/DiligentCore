@@ -94,6 +94,8 @@ public:
 
     static GLObjectWrappers::GLProgramObj LinkProgram(ShaderGLImpl** ppShaders, Uint32 NumShaders, bool IsSeparableProgram);
 
+    GLProgramResources& GetShaderResources() { return m_Resources; }
+
 private:
     GLObjectWrappers::GLShaderObj m_GLShaderObj;
     GLProgramResources            m_Resources;

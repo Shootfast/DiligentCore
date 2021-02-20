@@ -42,6 +42,7 @@
 #include "PipelineStateGLImpl.hpp"
 #include "BottomLevelASBase.hpp"
 #include "TopLevelASBase.hpp"
+#include "ShaderResourceBindingGLImpl.hpp"
 
 namespace Diligent
 {
@@ -300,6 +301,15 @@ private:
     void EndSubpass();
 
     Uint32 m_CommitedResourcesTentativeBarriers = 0;
+    struct SRBState
+    {
+#ifdef DILIGENT_DEVELOPMENT
+        // The SRB's shader resource cache
+        std::array<GLProgramResourceCache const*, MAX_RESOURCE_SIGNATURES> Resources;
+#endif
+        // Do not use strong references!
+        std::array<ShaderResourceBindingGLImpl*, MAX_RESOURCE_SIGNATURES> SRBs = {};
+    } m_BindInfo;
 
     std::vector<class TextureBaseGL*> m_BoundWritableTextures;
     std::vector<class BufferGLImpl*>  m_BoundWritableBuffers;

@@ -48,6 +48,7 @@
 #include "QueryGLImpl.hpp"
 #include "RenderPassGLImpl.hpp"
 #include "FramebufferGLImpl.hpp"
+#include "PipelineResourceSignatureGLImpl.hpp"
 #include "EngineMemory.h"
 #include "StringTools.hpp"
 
@@ -152,14 +153,15 @@ RenderDeviceGLImpl::RenderDeviceGLImpl(IReferenceCounters*       pRefCounters,
             sizeof(FramebufferGLImpl),
             0,
             0,
-            0
+            0,
+            sizeof(PipelineResourceSignatureGLImpl)
         }
     },
     // Device caps must be filled in before the constructor of Pipeline Cache is called!
     m_GLContext{InitAttribs, m_DeviceCaps, pSCDesc}
 // clang-format on
 {
-    static_assert(sizeof(DeviceObjectSizes) == sizeof(size_t) * 15, "Please add new objects to DeviceObjectSizes constructor");
+    static_assert(sizeof(DeviceObjectSizes) == sizeof(size_t) * 16, "Please add new objects to DeviceObjectSizes constructor");
 
     GLint NumExtensions = 0;
     glGetIntegerv(GL_NUM_EXTENSIONS, &NumExtensions);
@@ -440,6 +442,7 @@ RenderDeviceGLImpl::RenderDeviceGLImpl(IReferenceCounters*       pRefCounters,
         SET_FEATURE_STATE(ShaderInt8,                strstr(Extensions, "shader_explicit_arithmetic_types_int8"),    "8-bit integer shader operations are");
         SET_FEATURE_STATE(ResourceBuffer8BitAccess,  strstr(Extensions, "shader_8bit_storage"),                      "8-bit resoure buffer access is");
         SET_FEATURE_STATE(UniformBuffer8BitAccess,   strstr(Extensions, "shader_8bit_storage"),                      "8-bit uniform buffer access is");
+        SET_FEATURE_STATE(ShaderResourceRuntimeArray, false,                                                         "runtime-sized array is");
         // clang-format on
 
         TexCaps.MaxTexture1DDimension     = 0; // Not supported in GLES 3.2
@@ -467,7 +470,7 @@ RenderDeviceGLImpl::RenderDeviceGLImpl(IReferenceCounters*       pRefCounters,
 #undef SET_FEATURE_STATE
 
 #if defined(_MSC_VER) && defined(_WIN64)
-    static_assert(sizeof(DeviceFeatures) == 32, "Did you add a new feature to DeviceFeatures? Please handle its satus here.");
+    static_assert(sizeof(DeviceFeatures) == 33, "Did you add a new feature to DeviceFeatures? Please handle its satus here.");
 #endif
 }
 
@@ -798,6 +801,25 @@ void RenderDeviceGLImpl::CreateFramebuffer(const FramebufferDesc& Desc, IFramebu
                            FramebufferGLImpl* pFramebufferGL(NEW_RC_OBJ(m_FramebufferAllocator, "FramebufferGLImpl instance", FramebufferGLImpl)(this, GLState, Desc));
                            pFramebufferGL->QueryInterface(IID_Framebuffer, reinterpret_cast<IObject**>(ppFramebuffer));
                            OnCreateDeviceObject(pFramebufferGL);
+                       });
+}
+
+void RenderDeviceGLImpl::CreatePipelineResourceSignature(const PipelineResourceSignatureCreateInfo& CreateInfo,
+                                                         IPipelineResourceSignature**               ppSignature)
+{
+    CreatePipelineResourceSignature(CreateInfo, ppSignature, false);
+}
+
+void RenderDeviceGLImpl::CreatePipelineResourceSignature(const PipelineResourceSignatureCreateInfo& CreateInfo,
+                                                         IPipelineResourceSignature**               ppSignature,
+                                                         bool                                       IsDeviceInternal)
+{
+    CreateDeviceObject("PipelineResourceSignature", CreateInfo.Desc, ppSignature,
+                       [&]() //
+                       {
+                           PipelineResourceSignatureGLImpl* pPRSGL(NEW_RC_OBJ(m_PipeResSignAllocator, "PipelineResourceSignatureGLImpl instance", PipelineResourceSignatureGLImpl)(this, CreateInfo, IsDeviceInternal));
+                           pPRSGL->QueryInterface(IID_PipelineResourceSignature, reinterpret_cast<IObject**>(ppSignature));
+                           OnCreateDeviceObject(pPRSGL);
                        });
 }
 

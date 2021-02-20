@@ -28,6 +28,7 @@
 #include "pch.h"
 #include <array>
 #include "GLPipelineResourceLayout.hpp"
+#include "PipelineResourceSignatureGLImpl.hpp"
 #include "Align.hpp"
 #include "PlatformMisc.hpp"
 #include "ShaderBase.hpp"
@@ -35,43 +36,90 @@
 namespace Diligent
 {
 
-
-size_t GLPipelineResourceLayout::GetRequiredMemorySize(GLProgramResources*                  ProgramResources,
-                                                       Uint32                               NumPrograms,
-                                                       const PipelineResourceLayoutDesc&    ResourceLayout,
-                                                       const SHADER_RESOURCE_VARIABLE_TYPE* AllowedVarTypes,
-                                                       Uint32                               NumAllowedTypes)
+void GLPipelineResourceLayout::CountResources(const PipelineResourceSignatureGLImpl& Signature,
+                                              const SHADER_RESOURCE_VARIABLE_TYPE*   AllowedVarTypes,
+                                              Uint32                                 NumAllowedTypes,
+                                              const SHADER_TYPE                      ShaderType,
+                                              ResourceCounters&                      Counters)
 {
-    GLProgramResources::ResourceCounters Counters;
-    for (Uint32 prog = 0; prog < NumPrograms; ++prog)
+    ProcessSignatureResources(
+        Signature, AllowedVarTypes, NumAllowedTypes, ShaderType,
+        [&](Uint32 Index) {
+            const auto& ResDesc = Signature.GetResourceDesc(Index);
+            static_assert(SHADER_RESOURCE_RANGE_LAST == SHADER_RESOURCE_RANGE_SAMPLER, "AZ TODO");
+            switch (PipelineResourceToShaderResourceRange(ResDesc))
+            {
+                // clang-format off
+                case SHADER_RESOURCE_RANGE_CONSTANT_BUFFER: Counters.NumUBs           ++; break;
+                case SHADER_RESOURCE_RANGE_TEXTURE_SRV:     Counters.NumTextures      ++; break;
+                case SHADER_RESOURCE_RANGE_TEXTURE_UAV:     Counters.NumImages        ++; break;
+                case SHADER_RESOURCE_RANGE_BUFFER_UAV:      Counters.NumStorageBlocks ++; break;
+                    // clang-format on
+                case SHADER_RESOURCE_RANGE_SAMPLER:
+                default:
+                    UNEXPECTED("Unsupported resource type.");
+            }
+        });
+}
+
+template <typename HandlerType>
+void GLPipelineResourceLayout::ProcessSignatureResources(const PipelineResourceSignatureGLImpl& Signature,
+                                                         const SHADER_RESOURCE_VARIABLE_TYPE*   AllowedVarTypes,
+                                                         Uint32                                 NumAllowedTypes,
+                                                         SHADER_TYPE                            ShaderType,
+                                                         HandlerType                            Handler)
+{
+    const Uint32 AllowedTypeBits = GetAllowedTypeBits(AllowedVarTypes, NumAllowedTypes);
+
+    for (Uint32 var_type = 0; var_type < SHADER_RESOURCE_VARIABLE_TYPE_NUM_TYPES; ++var_type)
     {
-        ProgramResources[prog].CountResources(ResourceLayout, AllowedVarTypes, NumAllowedTypes, Counters);
+        const auto VarType = static_cast<SHADER_RESOURCE_VARIABLE_TYPE>(var_type);
+        if (IsAllowedType(VarType, AllowedTypeBits))
+        {
+            const auto ResIdxRange = Signature.GetResourceIndexRange(VarType);
+            for (Uint32 r = ResIdxRange.first; r < ResIdxRange.second; ++r)
+            {
+                const auto& Res = Signature.GetResourceDesc(r);
+                VERIFY_EXPR(Res.VarType == VarType);
+
+                if ((Res.ShaderStages & ShaderType) == 0)
+                    continue;
+
+                if (Res.ResourceType == SHADER_RESOURCE_TYPE_SAMPLER)
+                    continue;
+
+                Handler(r);
+            }
+        }
     }
+}
+
+size_t GLPipelineResourceLayout::GetRequiredMemorySize(const PipelineResourceSignatureGLImpl& Signature,
+                                                       const SHADER_RESOURCE_VARIABLE_TYPE*   AllowedVarTypes,
+                                                       Uint32                                 NumAllowedTypes,
+                                                       SHADER_TYPE                            ShaderType)
+{
+    ResourceCounters Counters;
+    CountResources(Signature, AllowedVarTypes, NumAllowedTypes, ShaderType, Counters);
 
     // clang-format off
     size_t RequiredSize = Counters.NumUBs           * sizeof(UniformBuffBindInfo)   + 
-                          Counters.NumSamplers      * sizeof(SamplerBindInfo)       +
+                          Counters.NumTextures      * sizeof(SamplerBindInfo)       +
                           Counters.NumImages        * sizeof(ImageBindInfo)         +
-                          Counters.NumStorageBlocks * sizeof(StorageBufferBindInfo) +
-                          NumPrograms               * sizeof(GLProgramResources::ResourceCounters);
+                          Counters.NumStorageBlocks * sizeof(StorageBufferBindInfo);
     // clang-format on
     return RequiredSize;
 }
 
-void GLPipelineResourceLayout::Initialize(GLProgramResources*                  ProgramResources,
-                                          Uint32                               NumPrograms,
-                                          PIPELINE_TYPE                        PipelineType,
-                                          const PipelineResourceLayoutDesc&    ResourceLayout,
-                                          const SHADER_RESOURCE_VARIABLE_TYPE* AllowedVarTypes,
-                                          Uint32                               NumAllowedTypes,
-                                          GLProgramResourceCache*              pResourceCache)
+void GLPipelineResourceLayout::Initialize(const PipelineResourceSignatureGLImpl& Signature,
+                                          const SHADER_RESOURCE_VARIABLE_TYPE*   AllowedVarTypes,
+                                          Uint32                                 NumAllowedTypes,
+                                          SHADER_TYPE                            ShaderType)
 {
-    GLProgramResources::ResourceCounters Counters;
+    ResourceCounters Counters;
+    CountResources(Signature, AllowedVarTypes, NumAllowedTypes, ShaderType, Counters);
 
-    for (Uint32 prog = 0; prog < NumPrograms; ++prog)
-    {
-        ProgramResources[prog].CountResources(ResourceLayout, AllowedVarTypes, NumAllowedTypes, Counters);
-    }
+    m_pSignature = &Signature;
 
     // Initialize offsets
     size_t CurrentOffset = 0;
@@ -88,17 +136,13 @@ void GLPipelineResourceLayout::Initialize(GLProgramResources*                  P
 
     // clang-format off
     auto UBOffset         = AdvanceOffset(Counters.NumUBs           * sizeof(UniformBuffBindInfo)  ); (void)UBOffset; // To suppress warning
-    m_SamplerOffset       = AdvanceOffset(Counters.NumSamplers      * sizeof(SamplerBindInfo)      );
+    m_TextureOffset       = AdvanceOffset(Counters.NumTextures      * sizeof(SamplerBindInfo)      );
     m_ImageOffset         = AdvanceOffset(Counters.NumImages        * sizeof(ImageBindInfo)        );
     m_StorageBufferOffset = AdvanceOffset(Counters.NumStorageBlocks * sizeof(StorageBufferBindInfo));
     m_VariableEndOffset   = AdvanceOffset(0);
     // clang-format off
-    m_NumPrograms         = static_cast<Uint8>(NumPrograms);
-    VERIFY_EXPR(m_NumPrograms == NumPrograms);
-    auto TotalMemorySize = m_VariableEndOffset + m_NumPrograms * sizeof(GLProgramResources::ResourceCounters);
-    VERIFY_EXPR(TotalMemorySize == GetRequiredMemorySize(ProgramResources, NumPrograms, ResourceLayout, AllowedVarTypes, NumAllowedTypes));
-
-    m_PipelineType = PipelineType;
+    auto TotalMemorySize = m_VariableEndOffset;
+    VERIFY_EXPR(TotalMemorySize == GetRequiredMemorySize(Signature, AllowedVarTypes, NumAllowedTypes, ShaderType));
 
     auto& ResLayoutDataAllocator = GetRawAllocator();
     if (TotalMemorySize)
@@ -109,114 +153,45 @@ void GLPipelineResourceLayout::Initialize(GLProgramResources*                  P
 
     // clang-format off
     VERIFY_EXPR(Counters.NumUBs           == GetNumUBs()           );
-    VERIFY_EXPR(Counters.NumSamplers      == GetNumSamplers()      );
+    VERIFY_EXPR(Counters.NumTextures      == GetNumTextures()      );
     VERIFY_EXPR(Counters.NumImages        == GetNumImages()        );
     VERIFY_EXPR(Counters.NumStorageBlocks == GetNumStorageBuffers());
     // clang-format on
 
     // Current resource index for every resource type
-    GLProgramResources::ResourceCounters VarCounters = {};
+    ResourceCounters VarCounters = {};
 
-    Uint32 UniformBindingSlots = 0;
-    Uint32 SamplerBindingSlots = 0;
-    Uint32 ImageBindingSlots   = 0;
-    Uint32 SSBOBindingSlots    = 0;
-
-#ifdef DILIGENT_DEBUG
-    const Uint32 DbgAllowedTypeBits = GetAllowedTypeBits(AllowedVarTypes, NumAllowedTypes);
-#endif
-    for (Uint32 prog = 0; prog < NumPrograms; ++prog)
-    {
-        const auto& Resources    = ProgramResources[prog];
-        auto        ShaderStages = Resources.GetShaderStages();
-        Resources.ProcessConstResources(
-            [&](const GLProgramResources::UniformBufferInfo& UB) //
+    ProcessSignatureResources(
+        Signature, AllowedVarTypes, NumAllowedTypes, ShaderType,
+        [&](Uint32 Index) {
+            const auto& ResDesc = Signature.GetResourceDesc(Index);
+            static_assert(SHADER_RESOURCE_RANGE_LAST == SHADER_RESOURCE_RANGE_SAMPLER, "AZ TODO");
+            switch (PipelineResourceToShaderResourceRange(ResDesc))
             {
-                auto VarType = GetShaderVariableType(ShaderStages, UB.Name, ResourceLayout);
-                VERIFY_EXPR(IsAllowedType(VarType, DbgAllowedTypeBits));
-                auto* pUBVar = new (&GetResource<UniformBuffBindInfo>(VarCounters.NumUBs++))
-                    UniformBuffBindInfo //
-                    {
-                        UB,
-                        *this,
-                        VarType //
-                    };
-                UniformBindingSlots = std::max(UniformBindingSlots, pUBVar->m_Attribs.Binding + pUBVar->m_Attribs.ArraySize);
-            },
-            [&](const GLProgramResources::SamplerInfo& Sam) //
-            {
-                auto VarType = GetShaderVariableType(ShaderStages, Sam.Name, ResourceLayout);
-                VERIFY_EXPR(IsAllowedType(VarType, DbgAllowedTypeBits));
-                Int32 ImtblSamplerIdx = -1;
-                if (Sam.ResourceType == SHADER_RESOURCE_TYPE_TEXTURE_SRV)
-                {
-                    ImtblSamplerIdx = FindImmutableSampler(ResourceLayout.ImmutableSamplers, ResourceLayout.NumImmutableSamplers, ShaderStages,
-                                                           Sam.Name, nullptr);
-                }
-                auto* pSamVar = new (&GetResource<SamplerBindInfo>(VarCounters.NumSamplers++))
-                    SamplerBindInfo //
-                    {
-                        Sam,
-                        *this,
-                        VarType,
-                        ImtblSamplerIdx //
-                    };
-                SamplerBindingSlots = std::max(SamplerBindingSlots, pSamVar->m_Attribs.Binding + pSamVar->m_Attribs.ArraySize);
-            },
-            [&](const GLProgramResources::ImageInfo& Img) //
-            {
-                auto VarType = GetShaderVariableType(ShaderStages, Img.Name, ResourceLayout);
-                VERIFY_EXPR(IsAllowedType(VarType, DbgAllowedTypeBits));
-                auto* pImgVar = new (&GetResource<ImageBindInfo>(VarCounters.NumImages++))
-                    ImageBindInfo //
-                    {
-                        Img,
-                        *this,
-                        VarType //
-                    };
-                ImageBindingSlots = std::max(ImageBindingSlots, pImgVar->m_Attribs.Binding + pImgVar->m_Attribs.ArraySize);
-            },
-            [&](const GLProgramResources::StorageBlockInfo& SB) //
-            {
-                auto VarType = GetShaderVariableType(ShaderStages, SB.Name, ResourceLayout);
-                VERIFY_EXPR(IsAllowedType(VarType, DbgAllowedTypeBits));
-                auto* pSSBOVar = new (&GetResource<StorageBufferBindInfo>(VarCounters.NumStorageBlocks++))
-                    StorageBufferBindInfo //
-                    {
-                        SB,
-                        *this,
-                        VarType //
-                    };
-                SSBOBindingSlots = std::max(SSBOBindingSlots, pSSBOVar->m_Attribs.Binding + pSSBOVar->m_Attribs.ArraySize);
-            },
-            &ResourceLayout,
-            AllowedVarTypes,
-            NumAllowedTypes //
-        );
-
-        new (&GetProgramVarEndOffsets(prog)) GLProgramResources::ResourceCounters{VarCounters};
-        while (ShaderStages != SHADER_TYPE_UNKNOWN)
-        {
-            auto Stage                = static_cast<SHADER_TYPE>(Uint32{ShaderStages} & ~(Uint32{ShaderStages} - 1));
-            auto ShaderInd            = GetShaderTypePipelineIndex(Stage, PipelineType);
-            m_ProgramIndex[ShaderInd] = static_cast<Int8>(prog);
-            ShaderStages              = static_cast<SHADER_TYPE>(Uint32{ShaderStages} & ~Stage);
-        }
-    }
+                case SHADER_RESOURCE_RANGE_CONSTANT_BUFFER:
+                    new (&GetResource<UniformBuffBindInfo>(VarCounters.NumUBs++)) UniformBuffBindInfo{*this, Index};
+                    break;
+                case SHADER_RESOURCE_RANGE_TEXTURE_SRV:
+                    new (&GetResource<SamplerBindInfo>(VarCounters.NumTextures++)) SamplerBindInfo{*this, Index};
+                    break;
+                case SHADER_RESOURCE_RANGE_TEXTURE_UAV:
+                    new (&GetResource<ImageBindInfo>(VarCounters.NumImages++)) ImageBindInfo{*this, Index};
+                    break;
+                case SHADER_RESOURCE_RANGE_BUFFER_UAV:
+                    new (&GetResource<StorageBufferBindInfo>(VarCounters.NumStorageBlocks++)) StorageBufferBindInfo{*this, Index};
+                    break;
+                case SHADER_RESOURCE_RANGE_SAMPLER:
+                default:
+                    UNEXPECTED("Unsupported resource type.");
+            }
+        });
 
     // clang-format off
     VERIFY(VarCounters.NumUBs           == GetNumUBs(),             "Not all UBs are initialized which will cause a crash when dtor is called");
-    VERIFY(VarCounters.NumSamplers      == GetNumSamplers(),        "Not all Samplers are initialized which will cause a crash when dtor is called");
+    VERIFY(VarCounters.NumTextures      == GetNumTextures(),        "Not all Samplers are initialized which will cause a crash when dtor is called");
     VERIFY(VarCounters.NumImages        == GetNumImages(),          "Not all Images are initialized which will cause a crash when dtor is called");
     VERIFY(VarCounters.NumStorageBlocks == GetNumStorageBuffers(),  "Not all SSBOs are initialized which will cause a crash when dtor is called");
     // clang-format on
-
-    m_pResourceCache = pResourceCache;
-    if (m_pResourceCache != nullptr && !m_pResourceCache->IsInitialized())
-    {
-        // NOTE that here we are using max bind points required to cache only the shader variables of allowed types!
-        m_pResourceCache->Initialize(UniformBindingSlots, SamplerBindingSlots, ImageBindingSlots, SSBOBindingSlots, GetRawAllocator());
-    }
 }
 
 GLPipelineResourceLayout::~GLPipelineResourceLayout()
@@ -246,27 +221,28 @@ GLPipelineResourceLayout::~GLPipelineResourceLayout()
     // clang-format on
 }
 
-
 void GLPipelineResourceLayout::UniformBuffBindInfo::BindResource(IDeviceObject* pBuffer,
                                                                  Uint32         ArrayIndex)
 {
-    DEV_CHECK_ERR(ArrayIndex < m_Attribs.ArraySize, "Array index (", ArrayIndex, ") is out of range for variable '", m_Attribs.Name, "'. Max allowed index: ", m_Attribs.ArraySize - 1);
-    VERIFY(m_ParentResLayout.m_pResourceCache != nullptr, "Resource cache is not initialized");
-    auto& ResourceCache = *m_ParentResLayout.m_pResourceCache;
+    const auto& Desc = GetDesc();
+    const auto& Attr = GetAttribs();
 
-    VERIFY_EXPR(m_Attribs.ResourceType == SHADER_RESOURCE_TYPE_CONSTANT_BUFFER);
+    DEV_CHECK_ERR(ArrayIndex < Desc.ArraySize, "Array index (", ArrayIndex, ") is out of range for variable '", Desc.Name, "'. Max allowed index: ", Desc.ArraySize - 1);
+    auto& ResourceCache = m_ParentResLayout.m_ResourceCache;
+
+    VERIFY_EXPR(Desc.ResourceType == SHADER_RESOURCE_TYPE_CONSTANT_BUFFER);
 
     // We cannot use ValidatedCast<> here as the resource retrieved from the
     // resource mapping can be of wrong type
     RefCntAutoPtr<BufferGLImpl> pBuffGLImpl(pBuffer, IID_BufferGL);
 #ifdef DILIGENT_DEVELOPMENT
     {
-        const auto& CachedUB = ResourceCache.GetConstUB(m_Attribs.Binding + ArrayIndex);
-        VerifyConstantBufferBinding(m_Attribs, GetType(), ArrayIndex, pBuffer, pBuffGLImpl.RawPtr(), CachedUB.pBuffer.RawPtr());
+        const auto& CachedUB = ResourceCache.GetConstUB(Attr.CacheOffset + ArrayIndex);
+        VerifyConstantBufferBinding(Desc.Name, Desc.ArraySize, Desc.VarType, Desc.Flags, ArrayIndex, pBuffer, pBuffGLImpl.RawPtr(), CachedUB.pBuffer.RawPtr());
     }
 #endif
 
-    ResourceCache.SetUniformBuffer(m_Attribs.Binding + ArrayIndex, std::move(pBuffGLImpl));
+    ResourceCache.SetUniformBuffer(Attr.CacheOffset + ArrayIndex, std::move(pBuffGLImpl));
 }
 
 
@@ -274,39 +250,45 @@ void GLPipelineResourceLayout::UniformBuffBindInfo::BindResource(IDeviceObject* 
 void GLPipelineResourceLayout::SamplerBindInfo::BindResource(IDeviceObject* pView,
                                                              Uint32         ArrayIndex)
 {
-    DEV_CHECK_ERR(ArrayIndex < m_Attribs.ArraySize, "Array index (", ArrayIndex, ") is out of range for variable '", m_Attribs.Name, "'. Max allowed index: ", m_Attribs.ArraySize - 1);
-    VERIFY(m_ParentResLayout.m_pResourceCache != nullptr, "Resource cache is not initialized");
-    auto& ResourceCache = *m_ParentResLayout.m_pResourceCache;
+    const auto& Desc = GetDesc();
+    const auto& Attr = GetAttribs();
 
-    VERIFY_EXPR(m_Attribs.ResourceType == SHADER_RESOURCE_TYPE_BUFFER_SRV ||
-                m_Attribs.ResourceType == SHADER_RESOURCE_TYPE_TEXTURE_SRV);
+    DEV_CHECK_ERR(ArrayIndex < Desc.ArraySize, "Array index (", ArrayIndex, ") is out of range for variable '", Desc.Name, "'. Max allowed index: ", Desc.ArraySize - 1);
+    auto& ResourceCache = m_ParentResLayout.m_ResourceCache;
 
-    if (m_Attribs.ResourceType == SHADER_RESOURCE_TYPE_TEXTURE_SRV)
+    VERIFY_EXPR(Desc.ResourceType == SHADER_RESOURCE_TYPE_BUFFER_SRV ||
+                Desc.ResourceType == SHADER_RESOURCE_TYPE_TEXTURE_SRV);
+
+    if (Desc.ResourceType == SHADER_RESOURCE_TYPE_TEXTURE_SRV)
     {
         // We cannot use ValidatedCast<> here as the resource retrieved from the
         // resource mapping can be of wrong type
         RefCntAutoPtr<TextureViewGLImpl> pViewGL(pView, IID_TextureViewGL);
 #ifdef DILIGENT_DEVELOPMENT
         {
-            auto& CachedTexSampler = ResourceCache.GetConstSampler(m_Attribs.Binding + ArrayIndex);
-            VerifyResourceViewBinding(m_Attribs, GetType(), ArrayIndex, pView, pViewGL.RawPtr(), {TEXTURE_VIEW_SHADER_RESOURCE}, CachedTexSampler.pView.RawPtr());
-            if (m_ImtblSamplerIdx >= 0)
+            auto& CachedTexSampler = ResourceCache.GetConstTexture(Attr.CacheOffset + ArrayIndex);
+            VerifyResourceViewBinding(Desc.Name, Desc.ArraySize, Desc.VarType, ArrayIndex,
+                                      pView, pViewGL.RawPtr(), {TEXTURE_VIEW_SHADER_RESOURCE},
+                                      RESOURCE_DIM_UNDEFINED, false, CachedTexSampler.pView.RawPtr());
+            if (Attr.IsImmutableSamplerAssigned())
             {
                 VERIFY(CachedTexSampler.pSampler != nullptr, "Immutable samplers must be initialized by PipelineStateGLImpl::InitializeSRBResourceCache!");
             }
         }
 #endif
-        ResourceCache.SetTexSampler(m_Attribs.Binding + ArrayIndex, std::move(pViewGL), m_ImtblSamplerIdx < 0);
+        ResourceCache.SetTexture(Attr.CacheOffset + ArrayIndex, std::move(pViewGL), !Attr.IsImmutableSamplerAssigned());
     }
-    else if (m_Attribs.ResourceType == SHADER_RESOURCE_TYPE_BUFFER_SRV)
+    else if (Desc.ResourceType == SHADER_RESOURCE_TYPE_BUFFER_SRV)
     {
         // We cannot use ValidatedCast<> here as the resource retrieved from the
         // resource mapping can be of wrong type
         RefCntAutoPtr<BufferViewGLImpl> pViewGL(pView, IID_BufferViewGL);
 #ifdef DILIGENT_DEVELOPMENT
         {
-            auto& CachedBuffSampler = ResourceCache.GetConstSampler(m_Attribs.Binding + ArrayIndex);
-            VerifyResourceViewBinding(m_Attribs, GetType(), ArrayIndex, pView, pViewGL.RawPtr(), {BUFFER_VIEW_SHADER_RESOURCE}, CachedBuffSampler.pView.RawPtr());
+            auto& CachedBuffSampler = ResourceCache.GetConstTexture(Attr.CacheOffset + ArrayIndex);
+            VerifyResourceViewBinding(Desc.Name, Desc.ArraySize, Desc.VarType, ArrayIndex,
+                                      pView, pViewGL.RawPtr(), {BUFFER_VIEW_SHADER_RESOURCE},
+                                      RESOURCE_DIM_BUFFER, false, CachedBuffSampler.pView.RawPtr());
             if (pViewGL != nullptr)
             {
                 const auto& ViewDesc = pViewGL->GetDesc();
@@ -314,16 +296,16 @@ void GLPipelineResourceLayout::SamplerBindInfo::BindResource(IDeviceObject* pVie
                 if (!((BuffDesc.Mode == BUFFER_MODE_FORMATTED && ViewDesc.Format.ValueType != VT_UNDEFINED) || BuffDesc.Mode == BUFFER_MODE_RAW))
                 {
                     LOG_ERROR_MESSAGE("Error binding buffer view '", ViewDesc.Name, "' of buffer '", BuffDesc.Name, "' to shader variable '",
-                                      m_Attribs.Name, ": formatted buffer view is expected.");
+                                      Desc.Name, ": formatted buffer view is expected.");
                 }
             }
         }
 #endif
-        ResourceCache.SetBufSampler(m_Attribs.Binding + ArrayIndex, std::move(pViewGL));
+        ResourceCache.SetTexelBuffer(Attr.CacheOffset + ArrayIndex, std::move(pViewGL));
     }
     else
     {
-        UNEXPECTED("Unexpected resource type ", GetShaderResourceTypeLiteralName(m_Attribs.ResourceType), ". Texture SRV or buffer SRV is expected.");
+        UNEXPECTED("Unexpected resource type ", GetShaderResourceTypeLiteralName(Desc.ResourceType), ". Texture SRV or buffer SRV is expected.");
     }
 }
 
@@ -331,32 +313,38 @@ void GLPipelineResourceLayout::SamplerBindInfo::BindResource(IDeviceObject* pVie
 void GLPipelineResourceLayout::ImageBindInfo::BindResource(IDeviceObject* pView,
                                                            Uint32         ArrayIndex)
 {
-    DEV_CHECK_ERR(ArrayIndex < m_Attribs.ArraySize, "Array index (", ArrayIndex, ") is out of range for variable '", m_Attribs.Name, "'. Max allowed index: ", m_Attribs.ArraySize - 1);
-    VERIFY(m_ParentResLayout.m_pResourceCache != nullptr, "Resource cache is not initialized");
-    auto& ResourceCache = *m_ParentResLayout.m_pResourceCache;
+    const auto& Desc = GetDesc();
+    const auto& Attr = GetAttribs();
 
-    if (m_Attribs.ResourceType == SHADER_RESOURCE_TYPE_TEXTURE_UAV)
+    DEV_CHECK_ERR(ArrayIndex < Desc.ArraySize, "Array index (", ArrayIndex, ") is out of range for variable '", Desc.Name, "'. Max allowed index: ", Desc.ArraySize - 1);
+    auto& ResourceCache = m_ParentResLayout.m_ResourceCache;
+
+    if (Desc.ResourceType == SHADER_RESOURCE_TYPE_TEXTURE_UAV)
     {
         // We cannot use ValidatedCast<> here as the resource retrieved from the
         // resource mapping can be of wrong type
         RefCntAutoPtr<TextureViewGLImpl> pViewGL(pView, IID_TextureViewGL);
 #ifdef DILIGENT_DEVELOPMENT
         {
-            auto& CachedUAV = ResourceCache.GetConstImage(m_Attribs.Binding + ArrayIndex);
-            VerifyResourceViewBinding(m_Attribs, GetType(), ArrayIndex, pView, pViewGL.RawPtr(), {TEXTURE_VIEW_UNORDERED_ACCESS}, CachedUAV.pView.RawPtr());
+            auto& CachedUAV = ResourceCache.GetConstImage(Attr.CacheOffset + ArrayIndex);
+            VerifyResourceViewBinding(Desc.Name, Desc.ArraySize, Desc.VarType, ArrayIndex,
+                                      pView, pViewGL.RawPtr(), {TEXTURE_VIEW_UNORDERED_ACCESS},
+                                      RESOURCE_DIM_UNDEFINED, false, CachedUAV.pView.RawPtr());
         }
 #endif
-        ResourceCache.SetTexImage(m_Attribs.Binding + ArrayIndex, std::move(pViewGL));
+        ResourceCache.SetTexImage(Attr.CacheOffset + ArrayIndex, std::move(pViewGL));
     }
-    else if (m_Attribs.ResourceType == SHADER_RESOURCE_TYPE_BUFFER_UAV)
+    else if (Desc.ResourceType == SHADER_RESOURCE_TYPE_BUFFER_UAV)
     {
         // We cannot use ValidatedCast<> here as the resource retrieved from the
         // resource mapping can be of wrong type
         RefCntAutoPtr<BufferViewGLImpl> pViewGL(pView, IID_BufferViewGL);
 #ifdef DILIGENT_DEVELOPMENT
         {
-            auto& CachedUAV = ResourceCache.GetConstImage(m_Attribs.Binding + ArrayIndex);
-            VerifyResourceViewBinding(m_Attribs, GetType(), ArrayIndex, pView, pViewGL.RawPtr(), {BUFFER_VIEW_UNORDERED_ACCESS}, CachedUAV.pView.RawPtr());
+            auto& CachedUAV = ResourceCache.GetConstImage(Attr.CacheOffset + ArrayIndex);
+            VerifyResourceViewBinding(Desc.Name, Desc.ArraySize, Desc.VarType, ArrayIndex,
+                                      pView, pViewGL.RawPtr(), {BUFFER_VIEW_UNORDERED_ACCESS},
+                                      RESOURCE_DIM_BUFFER, false, CachedUAV.pView.RawPtr());
             if (pViewGL != nullptr)
             {
                 const auto& ViewDesc = pViewGL->GetDesc();
@@ -364,16 +352,16 @@ void GLPipelineResourceLayout::ImageBindInfo::BindResource(IDeviceObject* pView,
                 if (!((BuffDesc.Mode == BUFFER_MODE_FORMATTED && ViewDesc.Format.ValueType != VT_UNDEFINED) || BuffDesc.Mode == BUFFER_MODE_RAW))
                 {
                     LOG_ERROR_MESSAGE("Error binding buffer view '", ViewDesc.Name, "' of buffer '", BuffDesc.Name, "' to shader variable '",
-                                      m_Attribs.Name, ": formatted buffer view is expected.");
+                                      Desc.Name, ": formatted buffer view is expected.");
                 }
             }
         }
 #endif
-        ResourceCache.SetBufImage(m_Attribs.Binding + ArrayIndex, std::move(pViewGL));
+        ResourceCache.SetBufImage(Attr.CacheOffset + ArrayIndex, std::move(pViewGL));
     }
     else
     {
-        UNEXPECTED("Unexpected resource type ", GetShaderResourceTypeLiteralName(m_Attribs.ResourceType), ". Texture UAV or buffer UAV is expected.");
+        UNEXPECTED("Unexpected resource type ", GetShaderResourceTypeLiteralName(Desc.ResourceType), ". Texture UAV or buffer UAV is expected.");
     }
 }
 
@@ -382,19 +370,23 @@ void GLPipelineResourceLayout::ImageBindInfo::BindResource(IDeviceObject* pView,
 void GLPipelineResourceLayout::StorageBufferBindInfo::BindResource(IDeviceObject* pView,
                                                                    Uint32         ArrayIndex)
 {
-    DEV_CHECK_ERR(ArrayIndex < m_Attribs.ArraySize, "Array index (", ArrayIndex, ") is out of range for variable '", m_Attribs.Name, "'. Max allowed index: ", m_Attribs.ArraySize - 1);
-    VERIFY(m_ParentResLayout.m_pResourceCache != nullptr, "Resource cache is not initialized");
-    auto& ResourceCache = *m_ParentResLayout.m_pResourceCache;
-    VERIFY_EXPR(m_Attribs.ResourceType == SHADER_RESOURCE_TYPE_BUFFER_UAV);
+    const auto& Desc = GetDesc();
+    const auto& Attr = GetAttribs();
+
+    DEV_CHECK_ERR(ArrayIndex < Desc.ArraySize, "Array index (", ArrayIndex, ") is out of range for variable '", Desc.Name, "'. Max allowed index: ", Desc.ArraySize - 1);
+    auto& ResourceCache = m_ParentResLayout.m_ResourceCache;
+    VERIFY_EXPR(Desc.ResourceType == SHADER_RESOURCE_TYPE_BUFFER_UAV);
 
     // We cannot use ValidatedCast<> here as the resource retrieved from the
     // resource mapping can be of wrong type
     RefCntAutoPtr<BufferViewGLImpl> pViewGL(pView, IID_BufferViewGL);
 #ifdef DILIGENT_DEVELOPMENT
     {
-        auto& CachedSSBO = ResourceCache.GetConstSSBO(m_Attribs.Binding + ArrayIndex);
+        auto& CachedSSBO = ResourceCache.GetConstSSBO(Attr.CacheOffset + ArrayIndex);
         // HLSL structured buffers are mapped to SSBOs in GLSL
-        VerifyResourceViewBinding(m_Attribs, GetType(), ArrayIndex, pView, pViewGL.RawPtr(), {BUFFER_VIEW_SHADER_RESOURCE, BUFFER_VIEW_UNORDERED_ACCESS}, CachedSSBO.pBufferView.RawPtr());
+        VerifyResourceViewBinding(Desc.Name, Desc.ArraySize, Desc.VarType, ArrayIndex,
+                                  pView, pViewGL.RawPtr(), {BUFFER_VIEW_SHADER_RESOURCE, BUFFER_VIEW_UNORDERED_ACCESS},
+                                  RESOURCE_DIM_BUFFER, false, CachedSSBO.pBufferView.RawPtr());
         if (pViewGL != nullptr)
         {
             const auto& ViewDesc = pViewGL->GetDesc();
@@ -402,12 +394,12 @@ void GLPipelineResourceLayout::StorageBufferBindInfo::BindResource(IDeviceObject
             if (BuffDesc.Mode != BUFFER_MODE_STRUCTURED && BuffDesc.Mode != BUFFER_MODE_RAW)
             {
                 LOG_ERROR_MESSAGE("Error binding buffer view '", ViewDesc.Name, "' of buffer '", BuffDesc.Name, "' to shader variable '",
-                                  m_Attribs.Name, ": structured buffer view is expected.");
+                                  Desc.Name, ": structured buffer view is expected.");
             }
         }
     }
 #endif
-    ResourceCache.SetSSBO(m_Attribs.Binding + ArrayIndex, std::move(pViewGL));
+    ResourceCache.SetSSBO(Attr.CacheOffset + ArrayIndex, std::move(pViewGL));
 }
 
 
@@ -416,10 +408,9 @@ void GLPipelineResourceLayout::StorageBufferBindInfo::BindResource(IDeviceObject
 class BindResourceHelper
 {
 public:
-    BindResourceHelper(IResourceMapping& RM, SHADER_TYPE SS, Uint32 Fl) :
+    BindResourceHelper(IResourceMapping& RM, Uint32 Fl) :
         // clang-format off
         ResourceMapping {RM},
-        ShaderStage     {SS},
         Flags           {Fl}
     // clang-format on
     {
@@ -431,15 +422,14 @@ public:
         if ((Flags & (1 << Res.GetType())) == 0)
             return;
 
-        for (Uint16 elem = 0; elem < Res.m_Attribs.ArraySize; ++elem)
-        {
-            if ((Res.m_Attribs.ShaderStages & ShaderStage) == 0)
-                continue;
+        const auto& ResDesc = Res.GetDesc();
 
+        for (Uint16 elem = 0; elem < ResDesc.ArraySize; ++elem)
+        {
             if ((Flags & BIND_SHADER_RESOURCES_KEEP_EXISTING) && Res.IsBound(elem))
                 continue;
 
-            const auto*                  VarName = Res.m_Attribs.Name;
+            const auto*                  VarName = ResDesc.Name;
             RefCntAutoPtr<IDeviceObject> pRes;
             ResourceMapping.GetResource(VarName, &pRes, elem);
             if (pRes)
@@ -457,15 +447,12 @@ public:
 
 private:
     IResourceMapping& ResourceMapping;
-    const SHADER_TYPE ShaderStage;
     const Uint32      Flags;
 };
 
 
-void GLPipelineResourceLayout::BindResources(SHADER_TYPE ShaderStage, IResourceMapping* pResourceMapping, Uint32 Flags, const GLProgramResourceCache& dbgResourceCache)
+void GLPipelineResourceLayout::BindResources(IResourceMapping* pResourceMapping, Uint32 Flags)
 {
-    VERIFY(&dbgResourceCache == m_pResourceCache, "Resource cache does not match the cache provided at initialization");
-
     if (pResourceMapping == nullptr)
     {
         LOG_ERROR_MESSAGE("Failed to bind resources: resource mapping is null");
@@ -475,7 +462,7 @@ void GLPipelineResourceLayout::BindResources(SHADER_TYPE ShaderStage, IResourceM
     if ((Flags & BIND_SHADER_RESOURCES_UPDATE_ALL) == 0)
         Flags |= BIND_SHADER_RESOURCES_UPDATE_ALL;
 
-    BindResourceHelper BindResHelper(*pResourceMapping, ShaderStage, Flags);
+    BindResourceHelper BindResHelper(*pResourceMapping, Flags);
 
     // clang-format off
     HandleResources(
@@ -504,13 +491,14 @@ void GLPipelineResourceLayout::BindResources(SHADER_TYPE ShaderStage, IResourceM
 
 
 template <typename ResourceType>
-IShaderResourceVariable* GLPipelineResourceLayout::GetResourceByName(SHADER_TYPE ShaderStage, const Char* Name)
+IShaderResourceVariable* GLPipelineResourceLayout::GetResourceByName(const Char* Name) const
 {
     auto NumResources = GetNumResources<ResourceType>();
     for (Uint32 res = 0; res < NumResources; ++res)
     {
-        auto& Resource = GetResource<ResourceType>(res);
-        if ((Resource.m_Attribs.ShaderStages & ShaderStage) != 0 && strcmp(Resource.m_Attribs.Name, Name) == 0)
+        auto&       Resource = GetResource<ResourceType>(res);
+        const auto& ResDesc  = Resource.GetDesc();
+        if (strcmp(ResDesc.Name, Name) == 0)
             return &Resource;
     }
 
@@ -518,68 +506,33 @@ IShaderResourceVariable* GLPipelineResourceLayout::GetResourceByName(SHADER_TYPE
 }
 
 
-IShaderResourceVariable* GLPipelineResourceLayout::GetShaderVariable(SHADER_TYPE ShaderStage, const Char* Name)
+IShaderResourceVariable* GLPipelineResourceLayout::GetVariable(const Char* Name) const
 {
-    VERIFY_EXPR(IsConsistentShaderType(ShaderStage, static_cast<PIPELINE_TYPE>(m_PipelineType)));
-
-    if (auto* pUB = GetResourceByName<UniformBuffBindInfo>(ShaderStage, Name))
+    if (auto* pUB = GetResourceByName<UniformBuffBindInfo>(Name))
         return pUB;
 
-    if (auto* pSampler = GetResourceByName<SamplerBindInfo>(ShaderStage, Name))
+    if (auto* pSampler = GetResourceByName<SamplerBindInfo>(Name))
         return pSampler;
 
-    if (auto* pImage = GetResourceByName<ImageBindInfo>(ShaderStage, Name))
+    if (auto* pImage = GetResourceByName<ImageBindInfo>(Name))
         return pImage;
 
-    if (auto* pSSBO = GetResourceByName<StorageBufferBindInfo>(ShaderStage, Name))
+    if (auto* pSSBO = GetResourceByName<StorageBufferBindInfo>(Name))
         return pSSBO;
 
     return nullptr;
 }
 
-Uint32 GLPipelineResourceLayout::GetNumVariables(SHADER_TYPE ShaderStage) const
+Uint32 GLPipelineResourceLayout::GetVariableCount() const
 {
-    VERIFY_EXPR(IsConsistentShaderType(ShaderStage, static_cast<PIPELINE_TYPE>(m_PipelineType)));
-    VERIFY(IsPowerOfTwo(Uint32{ShaderStage}), "Only one shader stage must be specified");
-    auto ShaderInd = GetShaderTypePipelineIndex(ShaderStage, static_cast<PIPELINE_TYPE>(m_PipelineType));
-    auto ProgIdx   = m_ProgramIndex[ShaderInd];
-
-    if (ProgIdx < 0)
-    {
-        LOG_WARNING_MESSAGE("Unable to get the number of variables in shader stage ", GetShaderTypeLiteralName(ShaderStage),
-                            " as the stage is inactive");
-        return 0;
-    }
-
-    const auto& VariableEndOffset   = GetProgramVarEndOffsets(ProgIdx);
-    const auto& VariableStartOffset = ProgIdx > 0 ? GetProgramVarEndOffsets(ProgIdx - 1) : GLProgramResources::ResourceCounters{};
-
-    // clang-format off
-    Uint32 NumVars = VariableEndOffset.NumUBs           - VariableStartOffset.NumUBs      + 
-                     VariableEndOffset.NumSamplers      - VariableStartOffset.NumSamplers + 
-                     VariableEndOffset.NumImages        - VariableStartOffset.NumImages   +
-                     VariableEndOffset.NumStorageBlocks - VariableStartOffset.NumStorageBlocks;
-    // clang-format on
-
-#ifdef DILIGENT_DEBUG
-    {
-        Uint32 DbgNumVars = 0;
-        auto   CountVar   = [&](const GLVariableBase& Var) {
-            DbgNumVars += ((Var.m_Attribs.ShaderStages & ShaderStage) != 0) ? 1 : 0;
-        };
-        HandleConstResources(CountVar, CountVar, CountVar, CountVar);
-        VERIFY_EXPR(DbgNumVars == NumVars);
-    }
-#endif
-
-    return NumVars;
+    return GetNumUBs() + GetNumTextures() + GetNumImages() + GetNumStorageBuffers();
 }
 
 class ShaderVariableLocator
 {
 public:
-    ShaderVariableLocator(GLPipelineResourceLayout& _Layout,
-                          Uint32                    _Index) :
+    ShaderVariableLocator(const GLPipelineResourceLayout& _Layout,
+                          Uint32                          _Index) :
         // clang-format off
         Layout {_Layout},
         Index  {_Index}
@@ -588,11 +541,10 @@ public:
     }
 
     template <typename ResourceType>
-    IShaderResourceVariable* TryResource(Uint32 StartVarOffset, Uint32 EndVarOffset)
+    IShaderResourceVariable* TryResource(Uint32 NumResources)
     {
-        auto NumResources = EndVarOffset - StartVarOffset;
         if (Index < NumResources)
-            return &Layout.GetResource<ResourceType>(StartVarOffset + Index);
+            return &Layout.GetResource<ResourceType>(Index);
         else
         {
             Index -= NumResources;
@@ -601,35 +553,25 @@ public:
     }
 
 private:
-    GLPipelineResourceLayout& Layout;
-    Uint32                    Index;
+    GLPipelineResourceLayout const& Layout;
+    Uint32                          Index;
 };
 
 
-IShaderResourceVariable* GLPipelineResourceLayout::GetShaderVariable(SHADER_TYPE ShaderStage, Uint32 Index)
+IShaderResourceVariable* GLPipelineResourceLayout::GetVariable(Uint32 Index) const
 {
-    VERIFY(IsPowerOfTwo(Uint32{ShaderStage}), "Only one shader stage must be specified");
-    auto ShaderInd = GetShaderTypePipelineIndex(ShaderStage, static_cast<PIPELINE_TYPE>(m_PipelineType));
-    auto ProgIdx   = m_ProgramIndex[ShaderInd];
-
-    if (ProgIdx < 0)
-        return nullptr;
-
-    const auto& VariableEndOffset   = GetProgramVarEndOffsets(ProgIdx);
-    const auto& VariableStartOffset = ProgIdx > 0 ? GetProgramVarEndOffsets(ProgIdx - 1) : GLProgramResources::ResourceCounters{};
-
     ShaderVariableLocator VarLocator(*this, Index);
 
-    if (auto* pUB = VarLocator.TryResource<UniformBuffBindInfo>(VariableStartOffset.NumUBs, VariableEndOffset.NumUBs))
+    if (auto* pUB = VarLocator.TryResource<UniformBuffBindInfo>(GetNumUBs()))
         return pUB;
 
-    if (auto* pSampler = VarLocator.TryResource<SamplerBindInfo>(VariableStartOffset.NumSamplers, VariableEndOffset.NumSamplers))
+    if (auto* pSampler = VarLocator.TryResource<SamplerBindInfo>(GetNumTextures()))
         return pSampler;
 
-    if (auto* pImage = VarLocator.TryResource<ImageBindInfo>(VariableStartOffset.NumImages, VariableEndOffset.NumImages))
+    if (auto* pImage = VarLocator.TryResource<ImageBindInfo>(GetNumImages()))
         return pImage;
 
-    if (auto* pSSBO = VarLocator.TryResource<StorageBufferBindInfo>(VariableStartOffset.NumStorageBlocks, VariableEndOffset.NumStorageBlocks))
+    if (auto* pSSBO = VarLocator.TryResource<StorageBufferBindInfo>(GetNumStorageBuffers()))
         return pSSBO;
 
     LOG_ERROR(Index, " is not a valid variable index.");
@@ -679,26 +621,19 @@ private:
 
 
 Uint32 GLPipelineResourceLayout::GetVariableIndex(const GLVariableBase& Var) const
-{
+{ /*
     if (!m_ResourceBuffer)
     {
         LOG_ERROR("This shader resource layout does not have resources");
         return static_cast<Uint32>(-1);
     }
 
-    auto FirstStage = static_cast<SHADER_TYPE>(Uint32{Var.m_Attribs.ShaderStages} & ~(Uint32{Var.m_Attribs.ShaderStages} - 1));
-    auto ProgIdx    = m_ProgramIndex[GetShaderTypePipelineIndex(FirstStage, static_cast<PIPELINE_TYPE>(m_PipelineType))];
-    VERIFY(ProgIdx >= 0, "This shader stage is not initialized in the resource layout");
-
-    const auto& VariableEndOffset   = GetProgramVarEndOffsets(ProgIdx);
-    const auto& VariableStartOffset = ProgIdx > 0 ? GetProgramVarEndOffsets(ProgIdx - 1) : GLProgramResources::ResourceCounters{};
-
     ShaderVariableIndexLocator IdxLocator(*this, Var);
 
     if (IdxLocator.TryResource<UniformBuffBindInfo>(m_SamplerOffset, VariableStartOffset.NumUBs, VariableEndOffset.NumUBs))
         return IdxLocator.GetIndex();
 
-    if (IdxLocator.TryResource<SamplerBindInfo>(m_ImageOffset, VariableStartOffset.NumSamplers, VariableEndOffset.NumSamplers))
+    if (IdxLocator.TryResource<SamplerBindInfo>(m_ImageOffset, VariableStartOffset.NumTextures, VariableEndOffset.NumTextures))
         return IdxLocator.GetIndex();
 
     if (IdxLocator.TryResource<ImageBindInfo>(m_StorageBufferOffset, VariableStartOffset.NumImages, VariableEndOffset.NumImages))
@@ -708,73 +643,26 @@ Uint32 GLPipelineResourceLayout::GetVariableIndex(const GLVariableBase& Var) con
         return IdxLocator.GetIndex();
 
     LOG_ERROR("Failed to get variable index. The variable ", &Var, " does not belong to this shader resource layout");
-    return static_cast<Uint32>(-1);
-}
-
-void GLPipelineResourceLayout::CopyResources(GLProgramResourceCache& DstCache) const
-{
-    VERIFY_EXPR(m_pResourceCache != nullptr);
-    const auto& SrcCache = *m_pResourceCache;
-    // clang-format off
-    VERIFY( DstCache.GetUBCount()      >= SrcCache.GetUBCount(),      "Dst cache is not large enough to contain all CBs" );
-    VERIFY( DstCache.GetSamplerCount() >= SrcCache.GetSamplerCount(), "Dst cache is not large enough to contain all SRVs" );
-    VERIFY( DstCache.GetImageCount()   >= SrcCache.GetImageCount(),   "Dst cache is not large enough to contain all samplers" );
-    VERIFY( DstCache.GetSSBOCount()    >= SrcCache.GetSSBOCount(),    "Dst cache is not large enough to contain all UAVs" );
-    // clang-format on
-
-    HandleConstResources(
-        [&](const UniformBuffBindInfo& UB) //
-        {
-            for (auto binding = UB.m_Attribs.Binding; binding < UB.m_Attribs.Binding + UB.m_Attribs.ArraySize; ++binding)
-            {
-                auto pBufferGL = SrcCache.GetConstUB(binding).pBuffer;
-                DstCache.SetUniformBuffer(binding, std::move(pBufferGL));
-            }
-        },
-
-        [&](const SamplerBindInfo& Sam) //
-        {
-            for (auto binding = Sam.m_Attribs.Binding; binding < Sam.m_Attribs.Binding + Sam.m_Attribs.ArraySize; ++binding)
-            {
-                const auto& SrcSam = SrcCache.GetConstSampler(binding);
-                DstCache.CopySampler(binding, SrcSam);
-            }
-        },
-
-        [&](const ImageBindInfo& Img) //
-        {
-            for (auto binding = Img.m_Attribs.Binding; binding < Img.m_Attribs.Binding + Img.m_Attribs.ArraySize; ++binding)
-            {
-                const auto& SrcImg = SrcCache.GetConstImage(binding);
-                DstCache.CopyImage(binding, SrcImg);
-            }
-        },
-
-        [&](const StorageBufferBindInfo& SSBO) //
-        {
-            for (auto binding = SSBO.m_Attribs.Binding; binding < SSBO.m_Attribs.Binding + SSBO.m_Attribs.ArraySize; ++binding)
-            {
-                auto pBufferView = SrcCache.GetConstSSBO(binding).pBufferView;
-                DstCache.SetSSBO(binding, std::move(pBufferView));
-            }
-        } //
-    );
+    return static_cast<Uint32>(-1);*/
+    return ~0u;
 }
 
 #ifdef DILIGENT_DEVELOPMENT
 bool GLPipelineResourceLayout::dvpVerifyBindings(const GLProgramResourceCache& ResourceCache) const
 {
-#    define LOG_MISSING_BINDING(VarType, BindInfo, BindPt) LOG_ERROR_MESSAGE("No resource is bound to ", VarType, " variable '", BindInfo.m_Attribs.GetPrintName(BindPt - BindInfo.m_Attribs.Binding), "'")
+#    define LOG_MISSING_BINDING(VarType, BindInfo, ArrIndex) LOG_ERROR_MESSAGE("No resource is bound to ", VarType, " variable '", GetShaderResourcePrintName(Desc, ArrIndex), "'")
 
     bool BindingsOK = true;
     HandleConstResources(
         [&](const UniformBuffBindInfo& ub) //
         {
-            for (Uint32 BindPoint = ub.m_Attribs.Binding; BindPoint < Uint32{ub.m_Attribs.Binding} + ub.m_Attribs.ArraySize; ++BindPoint)
+            const auto& Desc = GetResourceDesc(ub.m_ResIndex);
+            const auto& Attr = GetAttribs(ub.m_ResIndex);
+            for (Uint32 ArrInd = 0; ArrInd < Desc.ArraySize; ++ArrInd)
             {
-                if (!ResourceCache.IsUBBound(BindPoint))
+                if (!ResourceCache.IsUBBound(Attr.CacheOffset + ArrInd))
                 {
-                    LOG_MISSING_BINDING("constant buffer", ub, BindPoint);
+                    LOG_MISSING_BINDING("constant buffer", ub, ArrInd);
                     BindingsOK = false;
                 }
             }
@@ -782,21 +670,23 @@ bool GLPipelineResourceLayout::dvpVerifyBindings(const GLProgramResourceCache& R
 
         [&](const SamplerBindInfo& sam) //
         {
-            for (Uint32 BindPoint = sam.m_Attribs.Binding; BindPoint < Uint32{sam.m_Attribs.Binding} + sam.m_Attribs.ArraySize; ++BindPoint)
+            const auto& Desc = GetResourceDesc(sam.m_ResIndex);
+            const auto& Attr = GetAttribs(sam.m_ResIndex);
+            for (Uint32 ArrInd = 0; ArrInd < Desc.ArraySize; ++ArrInd)
             {
-                VERIFY_EXPR(sam.m_Attribs.ResourceType == SHADER_RESOURCE_TYPE_TEXTURE_SRV ||
-                            sam.m_Attribs.ResourceType == SHADER_RESOURCE_TYPE_BUFFER_SRV);
-                if (!ResourceCache.IsSamplerBound(BindPoint, sam.m_Attribs.ResourceType == SHADER_RESOURCE_TYPE_TEXTURE_SRV))
+                VERIFY_EXPR(Desc.ResourceType == SHADER_RESOURCE_TYPE_TEXTURE_SRV ||
+                            Desc.ResourceType == SHADER_RESOURCE_TYPE_BUFFER_SRV);
+                if (!ResourceCache.IsTextureBound(Attr.CacheOffset + ArrInd, Desc.ResourceType == SHADER_RESOURCE_TYPE_TEXTURE_SRV))
                 {
-                    LOG_MISSING_BINDING("texture", sam, BindPoint);
+                    LOG_MISSING_BINDING("texture", sam, ArrInd);
                     BindingsOK = false;
                 }
                 else
                 {
-                    const auto& CachedSampler = ResourceCache.GetConstSampler(BindPoint);
-                    if (sam.m_ImtblSamplerIdx >= 0 && CachedSampler.pSampler == nullptr)
+                    const auto& CachedSampler = ResourceCache.GetConstTexture(Attr.CacheOffset + ArrInd);
+                    if (Attr.IsImmutableSamplerAssigned() && CachedSampler.pSampler == nullptr)
                     {
-                        LOG_ERROR_MESSAGE("Immutable sampler is not initialized for texture '", sam.m_Attribs.Name, "'");
+                        LOG_ERROR_MESSAGE("Immutable sampler is not initialized for texture '", Desc.Name, "'");
                         BindingsOK = false;
                     }
                 }
@@ -805,13 +695,15 @@ bool GLPipelineResourceLayout::dvpVerifyBindings(const GLProgramResourceCache& R
 
         [&](const ImageBindInfo& img) //
         {
-            for (Uint32 BindPoint = img.m_Attribs.Binding; BindPoint < Uint32{img.m_Attribs.Binding} + img.m_Attribs.ArraySize; ++BindPoint)
+            const auto& Desc = GetResourceDesc(img.m_ResIndex);
+            const auto& Attr = GetAttribs(img.m_ResIndex);
+            for (Uint32 ArrInd = 0; ArrInd < Desc.ArraySize; ++ArrInd)
             {
-                VERIFY_EXPR(img.m_Attribs.ResourceType == SHADER_RESOURCE_TYPE_TEXTURE_UAV ||
-                            img.m_Attribs.ResourceType == SHADER_RESOURCE_TYPE_BUFFER_UAV);
-                if (!ResourceCache.IsImageBound(BindPoint, img.m_Attribs.ResourceType == SHADER_RESOURCE_TYPE_TEXTURE_UAV))
+                VERIFY_EXPR(Desc.ResourceType == SHADER_RESOURCE_TYPE_TEXTURE_UAV ||
+                            Desc.ResourceType == SHADER_RESOURCE_TYPE_BUFFER_UAV);
+                if (!ResourceCache.IsImageBound(Attr.CacheOffset + ArrInd, Desc.ResourceType == SHADER_RESOURCE_TYPE_TEXTURE_UAV))
                 {
-                    LOG_MISSING_BINDING("texture UAV", img, BindPoint);
+                    LOG_MISSING_BINDING("texture UAV", img, ArrInd);
                     BindingsOK = false;
                 }
             }
@@ -819,11 +711,13 @@ bool GLPipelineResourceLayout::dvpVerifyBindings(const GLProgramResourceCache& R
 
         [&](const StorageBufferBindInfo& ssbo) //
         {
-            for (Uint32 BindPoint = ssbo.m_Attribs.Binding; BindPoint < Uint32{ssbo.m_Attribs.Binding} + ssbo.m_Attribs.ArraySize; ++BindPoint)
+            const auto& Desc = GetResourceDesc(ssbo.m_ResIndex);
+            const auto& Attr = GetAttribs(ssbo.m_ResIndex);
+            for (Uint32 ArrInd = 0; ArrInd < Desc.ArraySize; ++ArrInd)
             {
-                if (!ResourceCache.IsSSBOBound(BindPoint))
+                if (!ResourceCache.IsSSBOBound(Attr.CacheOffset + ArrInd))
                 {
-                    LOG_MISSING_BINDING("buffer", ssbo, BindPoint);
+                    LOG_MISSING_BINDING("buffer", ssbo, ArrInd);
                     BindingsOK = false;
                 }
             }
@@ -833,6 +727,6 @@ bool GLPipelineResourceLayout::dvpVerifyBindings(const GLProgramResourceCache& R
     return BindingsOK;
 }
 
-#endif
+#endif // DILIGENT_DEVELOPMENT
 
 } // namespace Diligent

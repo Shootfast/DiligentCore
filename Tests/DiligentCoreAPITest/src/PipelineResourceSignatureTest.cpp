@@ -266,8 +266,8 @@ TEST_F(PipelineResourceSignatureTest, VariableTypes)
     auto pPS = CreateShaderFromFile(SHADER_TYPE_PIXEL, "shaders/ShaderResourceLayout/Textures.hlsl", "PSMain", "PRS variable types test: PS", Macros, ModifyShaderCI);
     ASSERT_TRUE(pVS && pPS);
 
-    PipelineResourceSignatureDesc PRSDesc;
-    PRSDesc.Name = "Variable types test";
+    PipelineResourceSignatureCreateInfo PRSCI;
+    PRSCI.Desc.Name = "Variable types test";
 
     constexpr auto SHADER_TYPE_VS_PS = SHADER_TYPE_VERTEX | SHADER_TYPE_PIXEL;
     // clang-format off
@@ -282,11 +282,11 @@ TEST_F(PipelineResourceSignatureTest, VariableTypes)
         {SHADER_TYPE_VS_PS, "g_Sampler",         1, SHADER_RESOURCE_TYPE_SAMPLER, SHADER_RESOURCE_VARIABLE_TYPE_STATIC},
     };
     // clang-format on
-    PRSDesc.Resources    = Resources;
-    PRSDesc.NumResources = _countof(Resources);
+    PRSCI.Desc.Resources    = Resources;
+    PRSCI.Desc.NumResources = _countof(Resources);
 
     RefCntAutoPtr<IPipelineResourceSignature> pPRS;
-    pDevice->CreatePipelineResourceSignature(PRSDesc, &pPRS);
+    pDevice->CreatePipelineResourceSignature(PRSCI, &pPRS);
     ASSERT_TRUE(pPRS);
 
     auto pPSO = CreateGraphicsPSO(pVS, pPS, {pPRS});
@@ -358,7 +358,7 @@ TEST_F(PipelineResourceSignatureTest, MultiSignatures)
     auto pPS = CreateShaderFromFile(SHADER_TYPE_PIXEL, "MultiSignatures.hlsl", "PSMain", "PRS multi signatures test: PS", Macros);
     ASSERT_TRUE(pVS && pPS);
 
-    PipelineResourceSignatureDesc PRSDesc;
+    PipelineResourceSignatureCreateInfo PRSCI;
 
     RefCntAutoPtr<IPipelineResourceSignature> pPRS[3];
     RefCntAutoPtr<IShaderResourceBinding>     pSRB[3];
@@ -379,14 +379,14 @@ TEST_F(PipelineResourceSignatureTest, MultiSignatures)
 
     for (Uint32 i = 0; i < _countof(pPRS); ++i)
     {
-        std::string PRSName  = "Multi signatures " + std::to_string(i);
-        PRSDesc.Name         = PRSName.c_str();
-        PRSDesc.BindingIndex = static_cast<Uint8>(i);
+        std::string PRSName     = "Multi signatures " + std::to_string(i);
+        PRSCI.Desc.Name         = PRSName.c_str();
+        PRSCI.Desc.BindingIndex = static_cast<Uint8>(i);
 
-        PRSDesc.Resources    = Resources[i].data();
-        PRSDesc.NumResources = static_cast<Uint32>(Resources[i].size());
+        PRSCI.Desc.Resources    = Resources[i].data();
+        PRSCI.Desc.NumResources = static_cast<Uint32>(Resources[i].size());
 
-        pDevice->CreatePipelineResourceSignature(PRSDesc, &pPRS[i]);
+        pDevice->CreatePipelineResourceSignature(PRSCI, &pPRS[i]);
         ASSERT_TRUE(pPRS[i]);
     }
 
@@ -482,20 +482,20 @@ TEST_F(PipelineResourceSignatureTest, SingleVarType)
 
         std::string Name = std::string{"PRS test - "} + GetShaderVariableTypeLiteralName(VarType) + " vars";
 
-        PipelineResourceSignatureDesc PRSDesc;
-        PRSDesc.Name         = Name.c_str();
-        PRSDesc.Resources    = Resources;
-        PRSDesc.NumResources = _countof(Resources);
+        PipelineResourceSignatureCreateInfo PRSCI;
+        PRSCI.Desc.Name         = Name.c_str();
+        PRSCI.Desc.Resources    = Resources;
+        PRSCI.Desc.NumResources = _countof(Resources);
 
         ImmutableSamplerDesc ImmutableSamplers[] = //
             {
                 {SHADER_TYPE_ALL_GRAPHICS, "g_Sampler", SamplerDesc{}} //
             };
-        PRSDesc.ImmutableSamplers    = ImmutableSamplers;
-        PRSDesc.NumImmutableSamplers = _countof(ImmutableSamplers);
+        PRSCI.Desc.ImmutableSamplers    = ImmutableSamplers;
+        PRSCI.Desc.NumImmutableSamplers = _countof(ImmutableSamplers);
 
         RefCntAutoPtr<IPipelineResourceSignature> pPRS;
-        pDevice->CreatePipelineResourceSignature(PRSDesc, &pPRS);
+        pDevice->CreatePipelineResourceSignature(PRSCI, &pPRS);
         ASSERT_TRUE(pPRS);
 
         EXPECT_EQ(pPRS->GetStaticVariableByName(SHADER_TYPE_VERTEX, "g_Sampler"), nullptr);
@@ -574,8 +574,8 @@ TEST_F(PipelineResourceSignatureTest, ImmutableSamplers)
     auto pPS = CreateShaderFromFile(SHADER_TYPE_PIXEL, "ImmutableSamplers.hlsl", "PSMain", "PRS static samplers test: PS", Macros);
     ASSERT_TRUE(pVS && pPS);
 
-    PipelineResourceSignatureDesc PRSDesc;
-    PRSDesc.Name = "Variable types test";
+    PipelineResourceSignatureCreateInfo PRSCI;
+    PRSCI.Desc.Name = "Variable types test";
 
     constexpr auto SHADER_TYPE_VS_PS = SHADER_TYPE_VERTEX | SHADER_TYPE_PIXEL;
     // clang-format off
@@ -586,19 +586,19 @@ TEST_F(PipelineResourceSignatureTest, ImmutableSamplers)
         {SHADER_TYPE_VS_PS, "g_Tex2D_Dyn",    1, SHADER_RESOURCE_TYPE_TEXTURE_SRV, SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC}
     };
     // clang-format on
-    PRSDesc.Resources    = Resources;
-    PRSDesc.NumResources = _countof(Resources);
+    PRSCI.Desc.Resources    = Resources;
+    PRSCI.Desc.NumResources = _countof(Resources);
 
     ImmutableSamplerDesc ImmutableSamplers[] = //
         {
             {SHADER_TYPE_VERTEX, "g_Sampler", SamplerDesc{}},
             {SHADER_TYPE_PIXEL, "g_Sampler", SamplerDesc{}} //
         };
-    PRSDesc.ImmutableSamplers    = ImmutableSamplers;
-    PRSDesc.NumImmutableSamplers = _countof(ImmutableSamplers);
+    PRSCI.Desc.ImmutableSamplers    = ImmutableSamplers;
+    PRSCI.Desc.NumImmutableSamplers = _countof(ImmutableSamplers);
 
     RefCntAutoPtr<IPipelineResourceSignature> pPRS;
-    pDevice->CreatePipelineResourceSignature(PRSDesc, &pPRS);
+    pDevice->CreatePipelineResourceSignature(PRSCI, &pPRS);
     ASSERT_TRUE(pPRS);
 
     EXPECT_EQ(pPRS->GetStaticVariableByName(SHADER_TYPE_VERTEX, "g_Sampler"), nullptr);
@@ -667,13 +667,13 @@ TEST_F(PipelineResourceSignatureTest, ImmutableSamplers2)
                 {SHADER_TYPE_VERTEX | SHADER_TYPE_PIXEL, "Constants", 1, SHADER_RESOURCE_TYPE_CONSTANT_BUFFER, SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE} //
             };
 
-        PipelineResourceSignatureDesc Desc;
-        Desc.Name         = "ImmutableSamplers2 - PRS1";
-        Desc.Resources    = Resources;
-        Desc.NumResources = _countof(Resources);
-        Desc.BindingIndex = 0;
+        PipelineResourceSignatureCreateInfo PRSCI;
+        PRSCI.Desc.Name         = "ImmutableSamplers2 - PRS1";
+        PRSCI.Desc.Resources    = Resources;
+        PRSCI.Desc.NumResources = _countof(Resources);
+        PRSCI.Desc.BindingIndex = 0;
 
-        pDevice->CreatePipelineResourceSignature(Desc, &pSignature1);
+        pDevice->CreatePipelineResourceSignature(PRSCI, &pSignature1);
         ASSERT_NE(pSignature1, nullptr);
     }
 
@@ -694,17 +694,17 @@ TEST_F(PipelineResourceSignatureTest, ImmutableSamplers2)
                 {SHADER_TYPE_VERTEX, "g_Texture", SamLinearWrapDesc} //
             };
 
-        PipelineResourceSignatureDesc Desc;
-        Desc.Name                       = "ImmutableSamplers2 - PRS2";
-        Desc.Resources                  = Resources;
-        Desc.NumResources               = _countof(Resources);
-        Desc.ImmutableSamplers          = ImmutableSamplers;
-        Desc.NumImmutableSamplers       = _countof(ImmutableSamplers);
-        Desc.UseCombinedTextureSamplers = true;
-        Desc.CombinedSamplerSuffix      = "_sampler";
-        Desc.BindingIndex               = 2;
+        PipelineResourceSignatureCreateInfo PRSCI;
+        PRSCI.Desc.Name                       = "ImmutableSamplers2 - PRS2";
+        PRSCI.Desc.Resources                  = Resources;
+        PRSCI.Desc.NumResources               = _countof(Resources);
+        PRSCI.Desc.ImmutableSamplers          = ImmutableSamplers;
+        PRSCI.Desc.NumImmutableSamplers       = _countof(ImmutableSamplers);
+        PRSCI.Desc.UseCombinedTextureSamplers = true;
+        PRSCI.Desc.CombinedSamplerSuffix      = "_sampler";
+        PRSCI.Desc.BindingIndex               = 2;
 
-        pDevice->CreatePipelineResourceSignature(Desc, &pSignature2);
+        pDevice->CreatePipelineResourceSignature(PRSCI, &pSignature2);
         ASSERT_NE(pSignature2, nullptr);
 
         EXPECT_EQ(pSignature2->GetStaticVariableByName(SHADER_TYPE_PIXEL, "g_Sampler"), nullptr);
@@ -713,10 +713,10 @@ TEST_F(PipelineResourceSignatureTest, ImmutableSamplers2)
 
     RefCntAutoPtr<IPipelineResourceSignature> pSignature3;
     {
-        PipelineResourceSignatureDesc Desc;
-        Desc.Name         = "ImmutableSamplers2 - PRS3";
-        Desc.BindingIndex = 3;
-        pDevice->CreatePipelineResourceSignature(Desc, &pSignature3);
+        PipelineResourceSignatureCreateInfo PRSCI;
+        PRSCI.Desc.Name         = "ImmutableSamplers2 - PRS3";
+        PRSCI.Desc.BindingIndex = 3;
+        pDevice->CreatePipelineResourceSignature(PRSCI, &pSignature3);
         ASSERT_NE(pSignature3, nullptr);
     }
 
@@ -811,12 +811,12 @@ TEST_F(PipelineResourceSignatureTest, SRBCompatibility)
                 {SHADER_TYPE_VERTEX | SHADER_TYPE_PIXEL, "Constants", 1, SHADER_RESOURCE_TYPE_CONSTANT_BUFFER, SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE} //
             };
 
-        PipelineResourceSignatureDesc Desc;
-        Desc.Resources    = Resources;
-        Desc.NumResources = _countof(Resources);
-        Desc.BindingIndex = 0;
+        PipelineResourceSignatureCreateInfo PRSCI;
+        PRSCI.Desc.Resources    = Resources;
+        PRSCI.Desc.NumResources = _countof(Resources);
+        PRSCI.Desc.BindingIndex = 0;
 
-        pDevice->CreatePipelineResourceSignature(Desc, &pSignature1);
+        pDevice->CreatePipelineResourceSignature(PRSCI, &pSignature1);
         ASSERT_NE(pSignature1, nullptr);
     }
 
@@ -833,16 +833,16 @@ TEST_F(PipelineResourceSignatureTest, SRBCompatibility)
             TEXTURE_ADDRESS_WRAP, TEXTURE_ADDRESS_WRAP, TEXTURE_ADDRESS_WRAP};
         ImmutableSamplerDesc ImmutableSamplers[] = {{SHADER_TYPE_PIXEL, "g_Texture", SamLinearWrapDesc}};
 
-        PipelineResourceSignatureDesc Desc;
-        Desc.Resources                  = Resources;
-        Desc.NumResources               = _countof(Resources);
-        Desc.ImmutableSamplers          = ImmutableSamplers;
-        Desc.NumImmutableSamplers       = _countof(ImmutableSamplers);
-        Desc.UseCombinedTextureSamplers = true;
-        Desc.CombinedSamplerSuffix      = "_sampler";
-        Desc.BindingIndex               = 2;
+        PipelineResourceSignatureCreateInfo PRSCI;
+        PRSCI.Desc.Resources                  = Resources;
+        PRSCI.Desc.NumResources               = _countof(Resources);
+        PRSCI.Desc.ImmutableSamplers          = ImmutableSamplers;
+        PRSCI.Desc.NumImmutableSamplers       = _countof(ImmutableSamplers);
+        PRSCI.Desc.UseCombinedTextureSamplers = true;
+        PRSCI.Desc.CombinedSamplerSuffix      = "_sampler";
+        PRSCI.Desc.BindingIndex               = 2;
 
-        pDevice->CreatePipelineResourceSignature(Desc, &pSignature2);
+        pDevice->CreatePipelineResourceSignature(PRSCI, &pSignature2);
         ASSERT_NE(pSignature2, nullptr);
     }
 
@@ -859,16 +859,16 @@ TEST_F(PipelineResourceSignatureTest, SRBCompatibility)
             TEXTURE_ADDRESS_WRAP, TEXTURE_ADDRESS_WRAP, TEXTURE_ADDRESS_WRAP};
         ImmutableSamplerDesc ImmutableSamplers[] = {{SHADER_TYPE_PIXEL, "g_Texture2", SamLinearWrapDesc}};
 
-        PipelineResourceSignatureDesc Desc;
-        Desc.Resources                  = Resources;
-        Desc.NumResources               = _countof(Resources);
-        Desc.ImmutableSamplers          = ImmutableSamplers;
-        Desc.NumImmutableSamplers       = _countof(ImmutableSamplers);
-        Desc.UseCombinedTextureSamplers = true;
-        Desc.CombinedSamplerSuffix      = "_sampler";
-        Desc.BindingIndex               = 3;
+        PipelineResourceSignatureCreateInfo PRSCI;
+        PRSCI.Desc.Resources                  = Resources;
+        PRSCI.Desc.NumResources               = _countof(Resources);
+        PRSCI.Desc.ImmutableSamplers          = ImmutableSamplers;
+        PRSCI.Desc.NumImmutableSamplers       = _countof(ImmutableSamplers);
+        PRSCI.Desc.UseCombinedTextureSamplers = true;
+        PRSCI.Desc.CombinedSamplerSuffix      = "_sampler";
+        PRSCI.Desc.BindingIndex               = 3;
 
-        pDevice->CreatePipelineResourceSignature(Desc, &pSignature3);
+        pDevice->CreatePipelineResourceSignature(PRSCI, &pSignature3);
         ASSERT_NE(pSignature3, nullptr);
     }
 
@@ -1003,16 +1003,16 @@ TEST_F(PipelineResourceSignatureTest, GraphicsAndMeshShader)
             TEXTURE_ADDRESS_WRAP, TEXTURE_ADDRESS_WRAP, TEXTURE_ADDRESS_WRAP};
         ImmutableSamplerDesc ImmutableSamplers[] = {{SHADER_TYPE_PIXEL, "g_Texture", SamLinearWrapDesc}};
 
-        PipelineResourceSignatureDesc Desc;
-        Desc.Resources                  = Resources;
-        Desc.NumResources               = _countof(Resources);
-        Desc.ImmutableSamplers          = ImmutableSamplers;
-        Desc.NumImmutableSamplers       = _countof(ImmutableSamplers);
-        Desc.UseCombinedTextureSamplers = true;
-        Desc.CombinedSamplerSuffix      = "_sampler";
-        Desc.BindingIndex               = 0;
+        PipelineResourceSignatureCreateInfo PRSCI;
+        PRSCI.Desc.Resources                  = Resources;
+        PRSCI.Desc.NumResources               = _countof(Resources);
+        PRSCI.Desc.ImmutableSamplers          = ImmutableSamplers;
+        PRSCI.Desc.NumImmutableSamplers       = _countof(ImmutableSamplers);
+        PRSCI.Desc.UseCombinedTextureSamplers = true;
+        PRSCI.Desc.CombinedSamplerSuffix      = "_sampler";
+        PRSCI.Desc.BindingIndex               = 0;
 
-        pDevice->CreatePipelineResourceSignature(Desc, &pSignaturePS);
+        pDevice->CreatePipelineResourceSignature(PRSCI, &pSignaturePS);
         ASSERT_NE(pSignaturePS, nullptr);
     }
 
@@ -1023,12 +1023,12 @@ TEST_F(PipelineResourceSignatureTest, GraphicsAndMeshShader)
                 {SHADER_TYPE_VERTEX, "Constants", 1, SHADER_RESOURCE_TYPE_CONSTANT_BUFFER, SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE} //
             };
 
-        PipelineResourceSignatureDesc Desc;
-        Desc.Resources    = Resources;
-        Desc.NumResources = _countof(Resources);
-        Desc.BindingIndex = 1;
+        PipelineResourceSignatureCreateInfo PRSCI;
+        PRSCI.Desc.Resources    = Resources;
+        PRSCI.Desc.NumResources = _countof(Resources);
+        PRSCI.Desc.BindingIndex = 1;
 
-        pDevice->CreatePipelineResourceSignature(Desc, &pSignatureVS);
+        pDevice->CreatePipelineResourceSignature(PRSCI, &pSignatureVS);
         ASSERT_NE(pSignatureVS, nullptr);
     }
 
@@ -1039,12 +1039,12 @@ TEST_F(PipelineResourceSignatureTest, GraphicsAndMeshShader)
                 {SHADER_TYPE_MESH, "Constants", 1, SHADER_RESOURCE_TYPE_CONSTANT_BUFFER, SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC} //
             };
 
-        PipelineResourceSignatureDesc Desc;
-        Desc.Resources    = Resources;
-        Desc.NumResources = _countof(Resources);
-        Desc.BindingIndex = 1;
+        PipelineResourceSignatureCreateInfo PRSCI;
+        PRSCI.Desc.Resources    = Resources;
+        PRSCI.Desc.NumResources = _countof(Resources);
+        PRSCI.Desc.BindingIndex = 1;
 
-        pDevice->CreatePipelineResourceSignature(Desc, &pSignatureMS);
+        pDevice->CreatePipelineResourceSignature(PRSCI, &pSignatureMS);
         ASSERT_NE(pSignatureMS, nullptr);
     }
 
@@ -1222,8 +1222,8 @@ TEST_F(PipelineResourceSignatureTest, CombinedImageSamplers)
     }
     ASSERT_NE(pPS, nullptr);
 
-    PipelineResourceSignatureDesc PRSDesc;
-    PRSDesc.Name = "Combined image samplers test";
+    PipelineResourceSignatureCreateInfo PRSCI;
+    PRSCI.Desc.Name = "Combined image samplers test";
 
     constexpr auto SHADER_TYPE_VS_PS = SHADER_TYPE_VERTEX | SHADER_TYPE_PIXEL;
     // clang-format off
@@ -1237,8 +1237,8 @@ TEST_F(PipelineResourceSignatureTest, CombinedImageSamplers)
         {SHADER_TYPE_VS_PS, "g_tex2D_DynArr",   2, SHADER_RESOURCE_TYPE_TEXTURE_SRV, SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC, PIPELINE_RESOURCE_FLAG_COMBINED_SAMPLER}
     };
     // clang-format on
-    PRSDesc.Resources    = Resources;
-    PRSDesc.NumResources = _countof(Resources);
+    PRSCI.Desc.Resources    = Resources;
+    PRSCI.Desc.NumResources = _countof(Resources);
 
     ImmutableSamplerDesc ImmutableSamplers[] = //
         {
@@ -1246,11 +1246,11 @@ TEST_F(PipelineResourceSignatureTest, CombinedImageSamplers)
             {SHADER_TYPE_ALL_GRAPHICS, "g_tex2D_MutArr", SamplerDesc{}},
             {SHADER_TYPE_ALL_GRAPHICS, "g_tex2D_DynArr", SamplerDesc{}} //
         };
-    PRSDesc.ImmutableSamplers    = ImmutableSamplers;
-    PRSDesc.NumImmutableSamplers = _countof(ImmutableSamplers);
+    PRSCI.Desc.ImmutableSamplers    = ImmutableSamplers;
+    PRSCI.Desc.NumImmutableSamplers = _countof(ImmutableSamplers);
 
     RefCntAutoPtr<IPipelineResourceSignature> pPRS;
-    pDevice->CreatePipelineResourceSignature(PRSDesc, &pPRS);
+    pDevice->CreatePipelineResourceSignature(PRSCI, &pPRS);
     ASSERT_TRUE(pPRS);
 
     auto pPSO = CreateGraphicsPSO(pVS, pPS, {pPRS});
@@ -1376,8 +1376,8 @@ void PipelineResourceSignatureTest::TestFormattedOrStructuredBuffer(BUFFER_MODE 
     auto pPS = CreateShaderFromFile(SHADER_TYPE_PIXEL, ShaderPath, PSEntry, "PRS FormattedBuffers - PS", Macros, ModifyShaderCI);
     ASSERT_TRUE(pVS && pPS);
 
-    PipelineResourceSignatureDesc PRSDesc;
-    PRSDesc.Name = "Formatted buffer test";
+    PipelineResourceSignatureCreateInfo PRSCI;
+    PRSCI.Desc.Name = "Formatted buffer test";
 
     constexpr auto SHADER_TYPE_VS_PS   = SHADER_TYPE_VERTEX | SHADER_TYPE_PIXEL;
     const auto     FormattedBufferFlag = BufferMode == BUFFER_MODE_FORMATTED ? PIPELINE_RESOURCE_FLAG_FORMATTED_BUFFER : PIPELINE_RESOURCE_FLAG_UNKNOWN;
@@ -1392,11 +1392,11 @@ void PipelineResourceSignatureTest::TestFormattedOrStructuredBuffer(BUFFER_MODE 
         {SHADER_TYPE_VS_PS, "g_BuffArr_Dyn",   DynamicBuffArraySize, SHADER_RESOURCE_TYPE_BUFFER_SRV, SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC, FormattedBufferFlag}
     };
     // clang-format on
-    PRSDesc.Resources    = Resources;
-    PRSDesc.NumResources = _countof(Resources);
+    PRSCI.Desc.Resources    = Resources;
+    PRSCI.Desc.NumResources = _countof(Resources);
 
     RefCntAutoPtr<IPipelineResourceSignature> pPRS;
-    pDevice->CreatePipelineResourceSignature(PRSDesc, &pPRS);
+    pDevice->CreatePipelineResourceSignature(PRSCI, &pPRS);
     ASSERT_TRUE(pPRS);
 
     auto pPSO = CreateGraphicsPSO(pVS, pPS, {pPRS});
@@ -1479,14 +1479,14 @@ TEST_F(PipelineResourceSignatureTest, VulkanDescriptorIndexing)
             TEXTURE_ADDRESS_WRAP, TEXTURE_ADDRESS_WRAP, TEXTURE_ADDRESS_WRAP};
         ImmutableSamplerDesc ImmutableSamplers[] = {{SHADER_TYPE_PIXEL, "g_Textures", SamLinearWrapDesc}};
 
-        PipelineResourceSignatureDesc Desc;
-        Desc.Resources            = Resources;
-        Desc.NumResources         = _countof(Resources);
-        Desc.ImmutableSamplers    = ImmutableSamplers;
-        Desc.NumImmutableSamplers = _countof(ImmutableSamplers);
-        Desc.BindingIndex         = 0;
+        PipelineResourceSignatureCreateInfo PRSCI;
+        PRSCI.Desc.Resources            = Resources;
+        PRSCI.Desc.NumResources         = _countof(Resources);
+        PRSCI.Desc.ImmutableSamplers    = ImmutableSamplers;
+        PRSCI.Desc.NumImmutableSamplers = _countof(ImmutableSamplers);
+        PRSCI.Desc.BindingIndex         = 0;
 
-        pDevice->CreatePipelineResourceSignature(Desc, &pSignature);
+        pDevice->CreatePipelineResourceSignature(PRSCI, &pSignature);
         ASSERT_NE(pSignature, nullptr);
     }
 

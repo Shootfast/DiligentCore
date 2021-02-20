@@ -97,8 +97,9 @@ private:
         ShaderStageInfo() {}
         ShaderStageInfo(ShaderD3D12Impl* _pShader);
 
-        void   Append(ShaderD3D12Impl* pShader);
-        size_t Count() const;
+        void        Append(ShaderD3D12Impl* pShader);
+        size_t      Count() const;
+        SHADER_TYPE GetType() const { return Type; }
 
         SHADER_TYPE                    Type = SHADER_TYPE_UNKNOWN;
         std::vector<ShaderD3D12Impl*>  Shaders;

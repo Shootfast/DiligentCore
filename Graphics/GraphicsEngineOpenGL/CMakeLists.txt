@@ -19,6 +19,7 @@ set(INCLUDE
     include/GLTypeConversions.hpp
     include/pch.h
     include/PipelineStateGLImpl.hpp
+    include/PipelineResourceSignatureGLImpl.hpp
     include/QueryGLImpl.hpp
     include/RenderDeviceGLImpl.hpp
     include/RenderPassGLImpl.hpp
@@ -72,6 +73,7 @@ set(SOURCE
     src/GLProgramResources.cpp
     src/GLTypeConversions.cpp
     src/PipelineStateGLImpl.cpp
+    src/PipelineResourceSignatureGLImpl.cpp
     src/QueryGLImpl.cpp
     src/RenderDeviceGLImpl.cpp
     src/RenderPassGLImpl.cpp

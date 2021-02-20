@@ -34,25 +34,22 @@
 #include "RenderDeviceGL.h"
 #include "ShaderResourceBindingBase.hpp"
 #include "GLProgramResources.hpp"
-#include "ShaderBase.hpp"
 #include "GLProgramResourceCache.hpp"
 #include "GLPipelineResourceLayout.hpp"
+#include "PipelineResourceSignatureGLImpl.hpp"
 
 namespace Diligent
 {
 
-class PipelineStateGLImpl;
-
 /// Shader resource binding object implementation in OpenGL backend.
-class ShaderResourceBindingGLImpl final : public ShaderResourceBindingBase<IShaderResourceBindingGL, PipelineStateGLImpl>
+class ShaderResourceBindingGLImpl final : public ShaderResourceBindingBase<IShaderResourceBindingGL, PipelineResourceSignatureGLImpl>
 {
 public:
-    using TBase = ShaderResourceBindingBase<IShaderResourceBindingGL, PipelineStateGLImpl>;
+    using TBase = ShaderResourceBindingBase<IShaderResourceBindingGL, PipelineResourceSignatureGLImpl>;
 
-    ShaderResourceBindingGLImpl(IReferenceCounters*  pRefCounters,
-                                PipelineStateGLImpl* pPSO,
-                                GLProgramResources*  ProgramResources,
-                                Uint32               NumPrograms);
+    ShaderResourceBindingGLImpl(IReferenceCounters*              pRefCounters,
+                                PipelineResourceSignatureGLImpl* pPRS,
+                                bool                             IsDeviceInternal = false);
     ~ShaderResourceBindingGLImpl();
 
     virtual void DILIGENT_CALL_TYPE QueryInterface(const INTERFACE_ID& IID, IObject** ppInterface) override final;
@@ -74,16 +71,26 @@ public:
     /// Implementation of IShaderResourceBinding::InitializeStaticResources() in OpenGL backend.
     virtual void DILIGENT_CALL_TYPE InitializeStaticResources(const IPipelineState* pPipelineState) override final;
 
-    const GLProgramResourceCache& GetResourceCache(PipelineStateGLImpl* pdbgPSO);
+    /// Implementation of IShaderResourceBinding::InitializeStaticResourcesWithSignature() in OpenGL backend.
+    virtual void DILIGENT_CALL_TYPE InitializeStaticResourcesWithSignature(const IPipelineResourceSignature* pResourceSignature) override final;
+
+    const GLProgramResourceCache& GetResourceCache() const { return m_ResourceCache; }
 
 private:
-    // The resource layout only references mutable and dynamic variables
-    GLPipelineResourceLayout m_ResourceLayout;
+    void Destruct();
+
+    std::array<Int8, MAX_SHADERS_IN_PIPELINE> m_ShaderVarIndex = {-1, -1, -1, -1, -1, -1};
+    static_assert(MAX_SHADERS_IN_PIPELINE == 6, "Please update the initializer list above");
+
+    bool m_bStaticResourcesInitialized = false;
+
+    const Uint8 m_NumShaders = 0;
 
     // The resource cache holds resource bindings for all variables
     GLProgramResourceCache m_ResourceCache;
 
-    bool m_bIsStaticResourcesBound = false;
+    // The resource layout only references mutable and dynamic variables
+    GLPipelineResourceLayout* m_ResourceLayouts = nullptr; // [m_NumShaders]
 };
 
 } // namespace Diligent

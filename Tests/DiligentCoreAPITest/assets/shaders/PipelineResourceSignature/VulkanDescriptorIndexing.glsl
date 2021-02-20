@@ -33,13 +33,13 @@ layout(rgba8) writeonly uniform image2D  g_OutImage;
 layout (local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
 void main ()
 {
-	ivec2 Dim = imageSize(g_OutImage);
-	if (gl_GlobalInvocationID.x >= uint(Dim.x) || gl_GlobalInvocationID.y >= uint(Dim.y))
-		return;
+    ivec2 Dim = imageSize(g_OutImage);
+    if (gl_GlobalInvocationID.x >= uint(Dim.x) || gl_GlobalInvocationID.y >= uint(Dim.y))
+        return;
 
     vec4 Color = vec4(vec2(gl_GlobalInvocationID.xy % 256u) / 256.0, 0.0, 1.0);
     vec2 uv = vec2(gl_GlobalInvocationID.xy + vec2(0.5,0.5)) / vec2(gl_WorkGroupSize.xy * gl_NumWorkGroups.xy);
     Color *= VerifyResources(gl_LocalInvocationIndex % NUM_TEXTURES, uv);
 
-	imageStore(g_OutImage, ivec2(gl_GlobalInvocationID.xy),  Color);
+    imageStore(g_OutImage, ivec2(gl_GlobalInvocationID.xy),  Color);
 }

@@ -132,12 +132,12 @@ public:
                                               IShaderBindingTable**         ppSBT) override final;
 
     /// Implementation of IRenderDevice::CreatePipelineResourceSignature() in Vulkan backend.
-    virtual void DILIGENT_CALL_TYPE CreatePipelineResourceSignature(const PipelineResourceSignatureDesc& Desc,
-                                                                    IPipelineResourceSignature**         ppSignature) override final;
+    virtual void DILIGENT_CALL_TYPE CreatePipelineResourceSignature(const PipelineResourceSignatureCreateInfo& CreateInfo,
+                                                                    IPipelineResourceSignature**               ppSignature) override final;
 
-    void CreatePipelineResourceSignature(const PipelineResourceSignatureDesc& Desc,
-                                         IPipelineResourceSignature**         ppSignature,
-                                         bool                                 IsDeviceInternal);
+    void CreatePipelineResourceSignature(const PipelineResourceSignatureCreateInfo& CreateInfo,
+                                         IPipelineResourceSignature**               ppSignature,
+                                         bool                                       IsDeviceInternal);
 
     /// Implementation of IRenderDeviceVk::GetVkDevice().
     virtual VkDevice DILIGENT_CALL_TYPE GetVkDevice() override final { return m_LogicalVkDevice->GetVkDevice(); }

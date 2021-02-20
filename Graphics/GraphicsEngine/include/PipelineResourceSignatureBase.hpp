@@ -214,6 +214,45 @@ public:
         return this->m_Desc.ImmutableSamplers[SampIndex];
     }
 
+    template <typename TPipelineResourceSignature>
+    static void CopyResourceSignatures(PIPELINE_TYPE                                                                   PipelineType,
+                                       const Uint32                                                                    SignatureCount,
+                                       IPipelineResourceSignature**                                                    ppResourceSignatures,
+                                       std::array<RefCntAutoPtr<TPipelineResourceSignature>, MAX_RESOURCE_SIGNATURES>& DstSignatures,
+                                       Uint8&                                                                          DstSignatureCount)
+    {
+        for (Uint32 i = 0; i < SignatureCount; ++i)
+        {
+            auto* pSignature = ValidatedCast<TPipelineResourceSignature>(ppResourceSignatures[i]);
+            VERIFY(pSignature != nullptr, "Pipeline resource signature at index ", i, " is null. This error should've been caught by ValidatePipelineResourceSignatures.");
+
+            const Uint8 Index = pSignature->GetDesc().BindingIndex;
+
+#ifdef DILIGENT_DEBUG
+            VERIFY(Index < DstSignatures.size(),
+                   "Pipeline resource signature specifies binding index ", Uint32{Index}, " that exceeds the limit (", DstSignatures.size() - 1,
+                   "). This error should've been caught by ValidatePipelineResourceSignatureDesc.");
+
+            VERIFY(DstSignatures[Index] == nullptr,
+                   "Pipeline resource signature '", pSignature->GetDesc().Name, "' at index ", Uint32{Index},
+                   " conflicts with another resource signature '", DstSignatures[Index]->GetDesc().Name,
+                   "' that uses the same index. This error should've been caught by ValidatePipelineResourceSignatures.");
+
+            for (Uint32 s = 0, StageCount = pSignature->GetNumActiveShaderStages(); s < StageCount; ++s)
+            {
+                const auto ShaderType = pSignature->GetActiveShaderStageType(s);
+                VERIFY(IsConsistentShaderType(ShaderType, PipelineType),
+                       "Pipeline resource signature '", pSignature->GetDesc().Name, "' at index ", Uint32{Index},
+                       " has shader stage '", GetShaderTypeLiteralName(ShaderType), "' that is not compatible with pipeline type '",
+                       GetPipelineTypeString(PipelineType), "'.");
+            }
+#endif
+
+            DstSignatureCount    = std::max<Uint8>(DstSignatureCount, Index + 1);
+            DstSignatures[Index] = pSignature;
+        }
+    }
+
 protected:
     void ReserveSpaceForDescription(FixedLinearAllocator& Allocator, const PipelineResourceSignatureDesc& Desc) const noexcept(false)
     {

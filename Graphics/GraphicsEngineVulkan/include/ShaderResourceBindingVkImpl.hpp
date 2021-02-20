@@ -41,8 +41,6 @@
 namespace Diligent
 {
 
-class PipelineResourceSignatureVkImpl;
-
 /// Implementation of the Diligent::IShaderResourceBindingVk interface
 // sizeof(ShaderResourceBindingVkImpl) == 64 (x64, msvc, Release)
 class ShaderResourceBindingVkImpl final : public ShaderResourceBindingBase<IShaderResourceBindingVk, PipelineResourceSignatureVkImpl>
@@ -74,7 +72,7 @@ private:
     void Destruct();
 
     ShaderResourceCacheVk    m_ShaderResourceCache;
-    ShaderVariableManagerVk* m_pShaderVarMgrs = nullptr;
+    ShaderVariableManagerVk* m_pShaderVarMgrs = nullptr; // [m_NumShaders]
 };
 
 } // namespace Diligent

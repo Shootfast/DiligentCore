@@ -833,21 +833,21 @@ void RenderDeviceVkImpl::CreateSBT(const ShaderBindingTableDesc& Desc,
         });
 }
 
-void RenderDeviceVkImpl::CreatePipelineResourceSignature(const PipelineResourceSignatureDesc& Desc,
-                                                         IPipelineResourceSignature**         ppSignature)
+void RenderDeviceVkImpl::CreatePipelineResourceSignature(const PipelineResourceSignatureCreateInfo& CreateInfo,
+                                                         IPipelineResourceSignature**               ppSignature)
 {
-    CreatePipelineResourceSignature(Desc, ppSignature, false);
+    CreatePipelineResourceSignature(CreateInfo, ppSignature, false);
 }
 
-void RenderDeviceVkImpl::CreatePipelineResourceSignature(const PipelineResourceSignatureDesc& Desc,
-                                                         IPipelineResourceSignature**         ppSignature,
-                                                         bool                                 IsDeviceInternal)
+void RenderDeviceVkImpl::CreatePipelineResourceSignature(const PipelineResourceSignatureCreateInfo& CreateInfo,
+                                                         IPipelineResourceSignature**               ppSignature,
+                                                         bool                                       IsDeviceInternal)
 {
     CreateDeviceObject(
-        "PipelineResourceSignature", Desc, ppSignature,
+        "PipelineResourceSignature", CreateInfo.Desc, ppSignature,
         [&]() //
         {
-            PipelineResourceSignatureVkImpl* pPRSVk(NEW_RC_OBJ(m_PipeResSignAllocator, "PipelineResourceSignatureVkImpl instance", PipelineResourceSignatureVkImpl)(this, Desc, IsDeviceInternal));
+            PipelineResourceSignatureVkImpl* pPRSVk(NEW_RC_OBJ(m_PipeResSignAllocator, "PipelineResourceSignatureVkImpl instance", PipelineResourceSignatureVkImpl)(this, CreateInfo, IsDeviceInternal));
             pPRSVk->QueryInterface(IID_PipelineResourceSignature, reinterpret_cast<IObject**>(ppSignature));
             OnCreateDeviceObject(pPRSVk);
         });

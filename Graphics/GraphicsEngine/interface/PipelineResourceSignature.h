@@ -115,6 +115,30 @@ DILIGENT_TYPED_ENUM(PIPELINE_RESOURCE_FLAGS, Uint8)
 };
 DEFINE_FLAG_ENUM_OPERATORS(PIPELINE_RESOURCE_FLAGS);
 
+///
+DILIGENT_TYPED_ENUM(SHADER_RESOURCE_RANGE, Uint8)
+{
+    /// Same as SHADER_RESOURCE_TYPE_CONSTANT_BUFFER.
+    SHADER_RESOURCE_RANGE_CONSTANT_BUFFER = 0,
+
+    /// Same as SHADER_RESOURCE_TYPE_TEXTURE_SRV and SHADER_RESOURCE_TYPE_BUFFER_SRV.
+    SHADER_RESOURCE_RANGE_TEXTURE_SRV,
+
+    /// Same as SHADER_RESOURCE_TYPE_TEXTURE_UAV, SHADER_RESOURCE_TYPE_BUFFER_UAV for texel buffer.
+    SHADER_RESOURCE_RANGE_TEXTURE_UAV,
+
+    /// Same as SHADER_RESOURCE_TYPE_BUFFER_UAV.
+    /// Only for OpenGL, ignored in Direct3D11.
+    SHADER_RESOURCE_RANGE_BUFFER_UAV,
+
+    /// Same as SHADER_RESOURCE_TYPE_SAMPLER.
+    /// Only for Direct3D11, ignored in OpenGL.
+    SHADER_RESOURCE_RANGE_SAMPLER,
+
+    SHADER_RESOURCE_RANGE_LAST = SHADER_RESOURCE_RANGE_SAMPLER,
+
+    SHADER_RESOURCE_RANGE_UNKNOWN = 0xFF,
+};
 
 /// Pipeline resource description.
 struct PipelineResourceDesc
@@ -185,9 +209,6 @@ struct PipelineResourceSignatureDesc DILIGENT_DERIVE(DeviceObjectAttribs)
     /// to different slots.
     Uint8  BindingIndex DEFAULT_INITIALIZER(0);
     
-    /// AZ TODO: comment
-    Uint16 BindingOffsets [SHADER_RESOURCE_TYPE_LAST + 1]  DEFAULT_INITIALIZER({});
-    
     /// If set to true, textures will be combined with texture samplers.
     /// The CombinedSamplerSuffix member defines the suffix added to the texture variable
     /// name to get corresponding sampler name. When using combined samplers,
@@ -210,6 +231,22 @@ struct PipelineResourceSignatureDesc DILIGENT_DERIVE(DeviceObjectAttribs)
     Uint32 SRBAllocationGranularity DEFAULT_INITIALIZER(1);
 };
 typedef struct PipelineResourceSignatureDesc PipelineResourceSignatureDesc;
+
+
+/// AZ TODO: comment
+struct PipelineResourceSignatureCreateInfo
+{
+    /// AZ TODO: comment
+    PipelineResourceSignatureDesc Desc;
+    
+    /// AZ TODO: comment
+    Uint16 BindingOffsets [DILIGENT_MAX_SHADER_STAGES][SHADER_RESOURCE_RANGE_LAST + 1]  DEFAULT_INITIALIZER({});
+    
+#if DILIGENT_CPP_INTERFACE
+    PipelineResourceSignatureCreateInfo() noexcept {}
+#endif
+};
+typedef struct PipelineResourceSignatureCreateInfo PipelineResourceSignatureCreateInfo;
 
 
 // {DCE499A5-F812-4C93-B108-D684A0B56118}

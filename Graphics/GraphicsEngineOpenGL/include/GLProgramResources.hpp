@@ -77,7 +77,7 @@ public:
 /*  0 */    const Char*                             Name;
 /*  8 */    const SHADER_TYPE                       ShaderStages;
 /* 12 */    const SHADER_RESOURCE_TYPE              ResourceType;
-/* 16 */    const Uint32                            Binding;
+/* 16 */          Uint32                            Binding;
 /* 20 */          Uint32                            ArraySize;
 /* 24 */    // End of data
         // clang-format on
@@ -115,30 +115,6 @@ public:
         {
         }
 
-        bool IsCompatibleWith(const GLResourceAttribs& Var)const
-        {
-            // clang-format off
-            return ShaderStages == Var.ShaderStages &&
-                   ResourceType == Var.ResourceType &&
-                   Binding      == Var.Binding      &&
-                   ArraySize    == Var.ArraySize;
-            // clang-format on
-        }
-
-        size_t GetHash() const
-        {
-            return ComputeHash(static_cast<Uint32>(ShaderStages), static_cast<Uint32>(ResourceType), Binding, ArraySize);
-        }
-
-        String GetPrintName(Uint32 ArrayInd) const
-        {
-            VERIFY_EXPR(ArrayInd < ArraySize);
-            if (ArraySize > 1)
-                return String(Name) + '[' + std::to_string(ArrayInd) + ']';
-            else
-                return Name;
-        }
-
         ShaderResourceDesc GetResourceDesc() const
         {
             ShaderResourceDesc ResourceDesc;
@@ -146,16 +122,6 @@ public:
             ResourceDesc.ArraySize = ArraySize;
             ResourceDesc.Type      = ResourceType;
             return ResourceDesc;
-        }
-
-        RESOURCE_DIMENSION GetResourceDimension() const
-        {
-            return RESOURCE_DIM_UNDEFINED;
-        }
-
-        bool IsMultisample() const
-        {
-            return false;
         }
     };
 
@@ -183,17 +149,6 @@ public:
             UBIndex          {UB.UBIndex   }
         {}
         // clang-format on
-
-        bool IsCompatibleWith(const UniformBufferInfo& UB) const
-        {
-            return UBIndex == UB.UBIndex &&
-                GLResourceAttribs::IsCompatibleWith(UB);
-        }
-
-        size_t GetHash() const
-        {
-            return ComputeHash(UBIndex, GLResourceAttribs::GetHash());
-        }
 
         const GLuint UBIndex;
     };
@@ -226,19 +181,7 @@ public:
             Location         {Sam.Location   },
             SamplerType      {Sam.SamplerType}
         {}
-
-        bool IsCompatibleWith(const SamplerInfo& Sam)const
-        {
-            return Location       == Sam.Location    &&
-                    SamplerType    == Sam.SamplerType &&
-                    GLResourceAttribs::IsCompatibleWith(Sam);
-        }
         // clang-format on
-
-        size_t GetHash() const
-        {
-            return ComputeHash(Location, SamplerType, GLResourceAttribs::GetHash());
-        }
 
         const GLint  Location;
         const GLenum SamplerType;
@@ -272,19 +215,7 @@ public:
             Location         {Img.Location },
             ImageType        {Img.ImageType}
         {}
-
-        bool IsCompatibleWith(const ImageInfo& Img)const
-        {
-            return Location  == Img.Location  &&
-                   ImageType == Img.ImageType &&
-                   GLResourceAttribs::IsCompatibleWith(Img);
-        }
         // clang-format on
-
-        size_t GetHash() const
-        {
-            return ComputeHash(Location, ImageType, GLResourceAttribs::GetHash());
-        }
 
         const GLint  Location;
         const GLenum ImageType;
@@ -315,18 +246,7 @@ public:
             GLResourceAttribs{SB, NamesPool},
             SBIndex          {SB.SBIndex}
         {}
-
-        bool IsCompatibleWith(const StorageBlockInfo& SB)const
-        {
-            return SBIndex == SB.SBIndex &&
-                   GLResourceAttribs::IsCompatibleWith(SB);
-        }
         // clang-format on
-
-        size_t GetHash() const
-        {
-            return ComputeHash(SBIndex, GLResourceAttribs::GetHash());
-        }
 
         const GLint SBIndex;
     };
@@ -396,8 +316,8 @@ public:
 
     ShaderResourceDesc GetResourceDesc(Uint32 Index) const;
 
-    bool   IsCompatibleWith(const GLProgramResources& Res) const;
-    size_t GetHash() const;
+    //bool   IsCompatibleWith(const GLProgramResources& Res) const;
+    //size_t GetHash() const;
 
     SHADER_TYPE GetShaderStages() const { return m_ShaderStages; }
 
@@ -476,19 +396,6 @@ public:
         for (Uint32 sb = 0; sb < m_NumStorageBlocks; ++sb)
             HandleSB(GetStorageBlock(sb));
     }
-
-    struct ResourceCounters
-    {
-        Uint32 NumUBs           = 0;
-        Uint32 NumSamplers      = 0;
-        Uint32 NumImages        = 0;
-        Uint32 NumStorageBlocks = 0;
-    };
-    void CountResources(const PipelineResourceLayoutDesc&    ResourceLayout,
-                        const SHADER_RESOURCE_VARIABLE_TYPE* AllowedVarTypes,
-                        Uint32                               NumAllowedTypes,
-                        ResourceCounters&                    Counters) const;
-
 
 private:
     void AllocateResources(std::vector<UniformBufferInfo>& UniformBlocks,

@@ -91,16 +91,14 @@ public:
                                                     std::array<AttachmentReference, MAX_RENDER_TARGETS + 1>&      AttachmentReferences,
                                                     SubpassDesc&                                                  SubpassDesc);
 
-
-    void InitializeStaticSRBResources(ShaderResourceCacheVk& ResourceCache) const;
-
     struct ShaderStageInfo
     {
         ShaderStageInfo() {}
         ShaderStageInfo(const ShaderVkImpl* pShader);
 
-        void   Append(const ShaderVkImpl* pShader);
-        size_t Count() const;
+        void        Append(const ShaderVkImpl* pShader);
+        size_t      Count() const;
+        SHADER_TYPE GetType() const { return Type; }
 
         // Shader stage type. All shaders in the stage must have the same type.
         SHADER_TYPE Type = SHADER_TYPE_UNKNOWN;

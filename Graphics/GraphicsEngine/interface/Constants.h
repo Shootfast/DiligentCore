@@ -47,9 +47,14 @@ DILIGENT_BEGIN_NAMESPACE(Diligent)
 /// The maximum number of resource signatures that one pipeline can use
 #define DILIGENT_MAX_RESOURCE_SIGNATURES 8
 
+/// The maximum number of rasterization shader stages.
+/// (Vertex, Hull, Domain, Geometry, Pixel)
+#define DILIGENT_MAX_SHADER_STAGES 5
+
 static const Uint32 MAX_BUFFER_SLOTS        = DILIGENT_MAX_BUFFER_SLOTS;
 static const Uint32 MAX_RENDER_TARGETS      = DILIGENT_MAX_RENDER_TARGETS;
 static const Uint32 MAX_VIEWPORTS           = DILIGENT_MAX_VIEWPORTS;
 static const Uint32 MAX_RESOURCE_SIGNATURES = DILIGENT_MAX_RESOURCE_SIGNATURES;
+static const Uint32 MAX_SHADER_STAGES       = DILIGENT_MAX_SHADER_STAGES;
 
 DILIGENT_END_NAMESPACE // namespace Diligent

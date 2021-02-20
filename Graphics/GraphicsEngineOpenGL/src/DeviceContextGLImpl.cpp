@@ -636,25 +636,24 @@ void DeviceContextGLImpl::EndRenderPass()
 
 void DeviceContextGLImpl::BindProgramResources(Uint32& NewMemoryBarriers, IShaderResourceBinding* pResBinding)
 {
-    if (!m_pPipelineState)
-    {
-        LOG_ERROR_MESSAGE("No pipeline state is bound");
-        return;
-    }
+    auto*      pShaderResBindingGL = ValidatedCast<ShaderResourceBindingGLImpl>(pResBinding);
+    const auto SRBIndex            = pShaderResBindingGL->GetBindingIndex();
 
-    if (pResBinding == nullptr)
+    if (m_BindInfo.SRBs[SRBIndex] == pShaderResBindingGL)
         return;
 
-    auto*       pShaderResBindingGL = ValidatedCast<ShaderResourceBindingGLImpl>(pResBinding);
-    const auto& ResourceCache       = pShaderResBindingGL->GetResourceCache(m_pPipelineState);
-#ifdef DILIGENT_DEVELOPMENT
-    m_pPipelineState->GetResourceLayout().dvpVerifyBindings(ResourceCache);
-#endif
+    const auto& ResourceCache = pShaderResBindingGL->GetResourceCache();
+    const auto* pSignature    = pShaderResBindingGL->GetSignature();
 
     VERIFY_EXPR(m_BoundWritableTextures.empty());
     VERIFY_EXPR(m_BoundWritableBuffers.empty());
 
-    for (Uint32 ub = 0; ub < ResourceCache.GetUBCount(); ++ub)
+#ifdef DILIGENT_DEVELOPMENT
+    m_BindInfo.Resources[SRBIndex] = &ResourceCache;
+#endif
+    m_BindInfo.SRBs[SRBIndex] = pShaderResBindingGL;
+
+    for (Uint32 ub = 0, binding = pSignature->GetFirstUBBinding(); ub < ResourceCache.GetUBCount(); ++ub, ++binding)
     {
         const auto& UB = ResourceCache.GetConstUB(ub);
         if (!UB.pBuffer)
@@ -666,13 +665,13 @@ void DeviceContextGLImpl::BindProgramResources(Uint32& NewMemoryBarriers, IShade
                                     // will reflect data written by shaders prior to the barrier
             m_ContextState);
 
-        m_ContextState.BindUniformBuffer(ub, pBufferGL->m_GlBuffer);
+        m_ContextState.BindUniformBuffer(binding, pBufferGL->m_GlBuffer);
         //glBindBufferRange(GL_UNIFORM_BUFFER, it->Index, pBufferGL->m_GlBuffer, 0, pBufferGL->GetDesc().uiSizeInBytes);
     }
 
-    for (Uint32 s = 0; s < ResourceCache.GetSamplerCount(); ++s)
+    for (Uint32 s = 0, binding = pSignature->GetFirstTextureBinding(); s < ResourceCache.GetTextureCount(); ++s, ++binding)
     {
-        const auto& Sam = ResourceCache.GetConstSampler(s);
+        const auto& Sam = ResourceCache.GetConstTexture(s);
         if (!Sam.pView)
             continue;
 
@@ -692,11 +691,11 @@ void DeviceContextGLImpl::BindProgramResources(Uint32& NewMemoryBarriers, IShade
 
             if (Sam.pSampler)
             {
-                m_ContextState.BindSampler(s, Sam.pSampler->GetHandle());
+                m_ContextState.BindSampler(binding, Sam.pSampler->GetHandle());
             }
             else
             {
-                m_ContextState.BindSampler(s, GLObjectWrappers::GLSamplerObj(false));
+                m_ContextState.BindSampler(binding, GLObjectWrappers::GLSamplerObj(false));
             }
         }
         else if (Sam.pBuffer != nullptr)
@@ -705,8 +704,8 @@ void DeviceContextGLImpl::BindProgramResources(Uint32& NewMemoryBarriers, IShade
             auto* pBufferGL  = ValidatedCast<BufferGLImpl>(Sam.pBuffer);
             VERIFY_EXPR(pBufferGL == pBufViewGL->GetBuffer());
 
-            m_ContextState.BindTexture(s, GL_TEXTURE_BUFFER, pBufViewGL->GetTexBufferHandle());
-            m_ContextState.BindSampler(s, GLObjectWrappers::GLSamplerObj(false)); // Use default texture sampling parameters
+            m_ContextState.BindTexture(binding, GL_TEXTURE_BUFFER, pBufViewGL->GetTexBufferHandle());
+            m_ContextState.BindSampler(binding, GLObjectWrappers::GLSamplerObj(false)); // Use default texture sampling parameters
 
             pBufferGL->BufferMemoryBarrier(
                 GL_TEXTURE_FETCH_BARRIER_BIT, // Texture fetches from shaders, including fetches from buffer object
@@ -717,7 +716,7 @@ void DeviceContextGLImpl::BindProgramResources(Uint32& NewMemoryBarriers, IShade
     }
 
 #if GL_ARB_shader_image_load_store
-    for (Uint32 img = 0; img < ResourceCache.GetImageCount(); ++img)
+    for (Uint32 img = 0, binding = pSignature->GetFirstImageBinding(); img < ResourceCache.GetImageCount(); ++img, ++binding)
     {
         const auto& Img = ResourceCache.GetConstImage(img);
         if (!Img.pView)
@@ -774,7 +773,7 @@ void DeviceContextGLImpl::BindProgramResources(Uint32& NewMemoryBarriers, IShade
             // That means that if an integer texture is being bound, its
             // GL_TEXTURE_MIN_FILTER and GL_TEXTURE_MAG_FILTER must be NEAREST,
             // otherwise it will be incomplete
-            m_ContextState.BindImage(img, pTexViewGL, ViewDesc.MostDetailedMip, Layered, Layer, GLAccess, GlTexFormat);
+            m_ContextState.BindImage(binding, pTexViewGL, ViewDesc.MostDetailedMip, Layered, Layer, GLAccess, GlTexFormat);
             // Do not use binding points from reflection as they may not be initialized
         }
         else if (Img.pBuffer != nullptr)
@@ -798,14 +797,14 @@ void DeviceContextGLImpl::BindProgramResources(Uint32& NewMemoryBarriers, IShade
             m_BoundWritableBuffers.push_back(pBufferGL);
 
             auto GlFormat = TypeToGLTexFormat(ViewDesc.Format.ValueType, ViewDesc.Format.NumComponents, ViewDesc.Format.IsNormalized);
-            m_ContextState.BindImage(img, pBuffViewGL, GL_READ_WRITE, GlFormat);
+            m_ContextState.BindImage(binding, pBuffViewGL, GL_READ_WRITE, GlFormat);
         }
     }
 #endif
 
 
 #if GL_ARB_shader_storage_buffer_object
-    for (Uint32 ssbo = 0; ssbo < ResourceCache.GetSSBOCount(); ++ssbo)
+    for (Uint32 ssbo = 0, binding = pSignature->GetFirstSSBBinding(); ssbo < ResourceCache.GetSSBOCount(); ++ssbo, ++binding)
     {
         const auto& SSBO = ResourceCache.GetConstSSBO(ssbo);
         if (!SSBO.pBufferView)
@@ -821,7 +820,7 @@ void DeviceContextGLImpl::BindProgramResources(Uint32& NewMemoryBarriers, IShade
                                            // will reflect writes prior to the barrier
             m_ContextState);
 
-        m_ContextState.BindStorageBlock(ssbo, pBufferGL->m_GlBuffer, ViewDesc.ByteOffset, ViewDesc.ByteWidth);
+        m_ContextState.BindStorageBlock(binding, pBufferGL->m_GlBuffer, ViewDesc.ByteOffset, ViewDesc.ByteWidth);
 
         if (ViewDesc.ViewType == BUFFER_VIEW_UNORDERED_ACCESS)
             m_BoundWritableBuffers.push_back(pBufferGL);
@@ -1270,6 +1269,11 @@ void DeviceContextGLImpl::Flush()
     }
 
     glFlush();
+
+#ifdef DILIGENT_DEVELOPMENT
+    m_BindInfo.Resources.fill(nullptr);
+#endif
+    m_BindInfo.SRBs.fill(nullptr);
 }
 
 void DeviceContextGLImpl::FinishFrame()

@@ -131,6 +131,14 @@ public:
     virtual void DILIGENT_CALL_TYPE CreateSBT(const ShaderBindingTableDesc& Desc,
                                               IShaderBindingTable**         ppSBT) override final;
 
+    /// Implementation of IRenderDevice::CreatePipelineResourceSignature() in OpenGL backend.
+    virtual void DILIGENT_CALL_TYPE CreatePipelineResourceSignature(const PipelineResourceSignatureCreateInfo& CreateInfo,
+                                                                    IPipelineResourceSignature**               ppSignature) override final;
+
+    void CreatePipelineResourceSignature(const PipelineResourceSignatureCreateInfo& CreateInfo,
+                                         IPipelineResourceSignature**               ppSignature,
+                                         bool                                       IsDeviceInternal);
+
     /// Implementation of IRenderDeviceGL::CreateTextureFromGLHandle().
     virtual void DILIGENT_CALL_TYPE CreateTextureFromGLHandle(Uint32             GLHandle,
                                                               Uint32             GLBindTarget,

@@ -833,18 +833,18 @@ void PipelineStateVkImpl::CreateDefaultSignature(const PipelineStateCreateInfo& 
     {
         String SignName = String{"Implicit signature for PSO '"} + m_Desc.Name + '\'';
 
-        PipelineResourceSignatureDesc ResSignDesc;
-        ResSignDesc.Name                       = SignName.c_str();
-        ResSignDesc.Resources                  = Resources.data();
-        ResSignDesc.NumResources               = static_cast<Uint32>(Resources.size());
-        ResSignDesc.ImmutableSamplers          = LayoutDesc.ImmutableSamplers;
-        ResSignDesc.NumImmutableSamplers       = LayoutDesc.NumImmutableSamplers;
-        ResSignDesc.BindingIndex               = 0;
-        ResSignDesc.SRBAllocationGranularity   = CreateInfo.PSODesc.SRBAllocationGranularity;
-        ResSignDesc.UseCombinedTextureSamplers = pCombinedSamplerSuffix != nullptr;
-        ResSignDesc.CombinedSamplerSuffix      = pCombinedSamplerSuffix;
+        PipelineResourceSignatureCreateInfo ResSignCI = {};
+        ResSignCI.Desc.Name                           = SignName.c_str();
+        ResSignCI.Desc.Resources                      = Resources.data();
+        ResSignCI.Desc.NumResources                   = static_cast<Uint32>(Resources.size());
+        ResSignCI.Desc.ImmutableSamplers              = LayoutDesc.ImmutableSamplers;
+        ResSignCI.Desc.NumImmutableSamplers           = LayoutDesc.NumImmutableSamplers;
+        ResSignCI.Desc.BindingIndex                   = 0;
+        ResSignCI.Desc.SRBAllocationGranularity       = CreateInfo.PSODesc.SRBAllocationGranularity;
+        ResSignCI.Desc.UseCombinedTextureSamplers     = pCombinedSamplerSuffix != nullptr;
+        ResSignCI.Desc.CombinedSamplerSuffix          = pCombinedSamplerSuffix;
 
-        GetDevice()->CreatePipelineResourceSignature(ResSignDesc, ppSignature, true);
+        GetDevice()->CreatePipelineResourceSignature(ResSignCI, ppSignature, true);
 
         if (*ppSignature == nullptr)
             LOG_ERROR_AND_THROW("Failed to create resource signature for pipeline state");
