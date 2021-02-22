@@ -33,12 +33,12 @@
 #include <array>
 
 #include "PipelineResourceSignatureBase.hpp"
-#include "GLProgramResourceCache.hpp"
+#include "ShaderResourceCacheGL.hpp"
 
 namespace Diligent
 {
 class RenderDeviceGLImpl;
-class GLPipelineResourceLayout;
+class ShaderVariableGL;
 
 /// Implementation of the Diligent::PipelineResourceSignatureGLImpl class
 class PipelineResourceSignatureGLImpl final : public PipelineResourceSignatureBase<IPipelineResourceSignature, RenderDeviceGLImpl>
@@ -105,6 +105,12 @@ public:
     Uint32 GetFirstImageBinding() const { return m_FirstBinding[SHADER_RESOURCE_RANGE_TEXTURE_UAV]; }
     Uint32 GetFirstSSBBinding() const { return m_FirstBinding[SHADER_RESOURCE_RANGE_BUFFER_UAV]; }
 
+    bool HasDynamicResources() const
+    {
+        auto IndexRange = GetResourceIndexRange(SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC);
+        return IndexRange.second > IndexRange.first;
+    }
+
     void ApplyBindings(GLObjectWrappers::GLProgramObj& GLProgram,
                        class GLContextState&           State,
                        SHADER_TYPE                     Stages) const;
@@ -134,14 +140,20 @@ public:
         return IsCompatibleWith(*ValidatedCast<const PipelineResourceSignatureGLImpl>(pPRS));
     }
 
+    virtual void DILIGENT_CALL_TYPE InitializeStaticSRBResources(IShaderResourceBinding* pSRB) const override final;
+
     bool IsCompatibleWith(const PipelineResourceSignatureGLImpl& Other) const;
 
-    void InitSRBResourceCache(GLProgramResourceCache& ResourceCache) const;
+    void InitSRBResourceCache(ShaderResourceCacheGL& ResourceCache) const;
 
-    // Copies static resources from the static resource cache to the destination cache
-    void InitializeStaticSRBResources(GLProgramResourceCache& ResourceCache) const;
+#ifdef DILIGENT_DEVELOPMENT
+    void DvpCheckIntersections(Uint32 PrevBindings[SHADER_RESOURCE_RANGE_LAST + 1]) const;
+#endif
 
 private:
+    // Copies static resources from the static resource cache to the destination cache
+    void CopyStaticResources(ShaderResourceCacheGL& ResourceCache) const;
+
     void CreateLayouts(const PipelineResourceSignatureCreateInfo& CreateInfo);
 
     void Destruct();
@@ -152,15 +164,15 @@ private:
     ResourceAttribs* m_pResourceAttribs = nullptr; // [m_Desc.NumResources]
 
     // Resource cache for static resource variables only
-    GLProgramResourceCache* m_StaticResourceCache = nullptr;
+    ShaderResourceCacheGL* m_pStaticResCache = nullptr;
 
-    GLPipelineResourceLayout* m_StaticResourceLayouts = nullptr; // [m_NumShaderStages]
+    ShaderVariableGL* m_StaticVarsMgrs = nullptr; // [GetNumStaticResStages()]
 
     using SamplerPtr                = RefCntAutoPtr<ISampler>;
     SamplerPtr* m_ImmutableSamplers = nullptr; // [m_Desc.NumImmutableSamplers]
 
-    std::array<Uint32, SHADER_RESOURCE_RANGE_LAST + 1> m_FirstBinding = {};
-    std::array<Uint32, SHADER_RESOURCE_RANGE_LAST + 1> m_BindingCount = {};
+    std::array<Uint32, SHADER_RESOURCE_RANGE_LAST> m_FirstBinding = {};
+    std::array<Uint32, SHADER_RESOURCE_RANGE_LAST> m_BindingCount = {};
 };
 
 SHADER_RESOURCE_RANGE PipelineResourceToShaderResourceRange(const PipelineResourceDesc& Desc);

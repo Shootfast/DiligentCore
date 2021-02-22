@@ -34,7 +34,7 @@
 #include "GLObjectWrapper.hpp"
 #include "GLContext.hpp"
 #include "RenderDeviceGLImpl.hpp"
-#include "GLPipelineResourceLayout.hpp"
+#include "ShaderVariableGL.hpp"
 #include "ShaderGLImpl.hpp"
 #include "PipelineResourceSignatureGLImpl.hpp"
 
@@ -86,17 +86,20 @@ public:
     }
 
 private:
+    using ShaderStageInfo = ShaderGLImpl::ShaderStageInfo;
+    using TShaderStages   = std::vector<ShaderStageInfo>;
+
     GLObjectWrappers::GLPipelineObj& GetGLProgramPipeline(GLContext::NativeGLContextType Context);
 
     template <typename PSOCreateInfoType>
-    void InitInternalObjects(const PSOCreateInfoType& CreateInfo, std::vector<ShaderGLImpl*>& Shaders);
+    void InitInternalObjects(const PSOCreateInfoType& CreateInfo, TShaderStages& Shaders);
 
     void InitResourceLayouts(const PipelineStateCreateInfo& CreateInfo,
-                             std::vector<ShaderGLImpl*>&    Shaders,
+                             TShaderStages&                 Shaders,
                              SHADER_TYPE                    ActiveStages);
 
     void CreateDefaultSignature(const PipelineStateCreateInfo& CreateInfo,
-                                std::vector<ShaderGLImpl*>&    ShaderStages,
+                                TShaderStages&                 ShaderStages,
                                 SHADER_TYPE                    ActiveStages,
                                 IPipelineResourceSignature**   ppSignature);
 

@@ -29,7 +29,7 @@
 #include "PipelineResourceSignatureGLImpl.hpp"
 #include "RenderDeviceGLImpl.hpp"
 #include "ShaderResourceBindingGLImpl.hpp"
-#include "GLPipelineResourceLayout.hpp"
+#include "ShaderVariableGL.hpp"
 
 namespace Diligent
 {
@@ -44,6 +44,23 @@ inline bool ResourcesCompatible(const PipelineResourceSignatureGLImpl::ResourceA
     return lhs.CacheOffset          == rhs.CacheOffset &&
            lhs.ImtblSamplerAssigned == rhs.ImtblSamplerAssigned;
     // clang-format on
+}
+
+const char* GetShaderResourceRangeName(SHADER_RESOURCE_RANGE Range)
+{
+    static_assert(SHADER_RESOURCE_RANGE_LAST == SHADER_RESOURCE_RANGE_SAMPLER, "Please update the switch below to handle the new shader resource range");
+    switch (Range)
+    {
+        // clang-format off
+        case SHADER_RESOURCE_RANGE_CONSTANT_BUFFER: return "Uniform buffer";
+        case SHADER_RESOURCE_RANGE_TEXTURE_SRV:     return "Texture";
+        case SHADER_RESOURCE_RANGE_TEXTURE_UAV:     return "Image";
+        case SHADER_RESOURCE_RANGE_BUFFER_UAV:      return "Storage buffer";
+        // clang-format on
+        case SHADER_RESOURCE_RANGE_SAMPLER:
+        default:
+            return "Unknown";
+    }
 }
 } // namespace
 
@@ -68,8 +85,8 @@ PipelineResourceSignatureGLImpl::PipelineResourceSignatureGLImpl(IReferenceCount
         const auto NumStaticResStages = GetNumStaticResStages();
         if (NumStaticResStages > 0)
         {
-            MemPool.AddSpace<GLProgramResourceCache>(1);
-            MemPool.AddSpace<GLPipelineResourceLayout>(NumStaticResStages);
+            MemPool.AddSpace<ShaderResourceCacheGL>(1);
+            MemPool.AddSpace<ShaderVariableGL>(NumStaticResStages);
         }
 
         MemPool.Reserve();
@@ -86,8 +103,8 @@ PipelineResourceSignatureGLImpl::PipelineResourceSignatureGLImpl(IReferenceCount
 
         if (NumStaticResStages > 0)
         {
-            m_StaticResourceCache   = MemPool.Construct<GLProgramResourceCache>();
-            m_StaticResourceLayouts = MemPool.ConstructArray<GLPipelineResourceLayout>(NumStaticResStages, std::ref(*this), std::ref(*m_StaticResourceCache));
+            m_pStaticResCache = MemPool.Construct<ShaderResourceCacheGL>(ShaderResourceCacheGL::CacheContentType::Signature);
+            m_StaticVarsMgrs  = MemPool.ConstructArray<ShaderVariableGL>(NumStaticResStages, std::ref(*this), std::ref(*m_pStaticResCache));
         }
 
         CreateLayouts(CreateInfo);
@@ -102,7 +119,7 @@ PipelineResourceSignatureGLImpl::PipelineResourceSignatureGLImpl(IReferenceCount
                 {
                     VERIFY_EXPR(static_cast<Uint32>(Idx) < NumStaticResStages);
                     const auto ShaderType = GetShaderTypeFromPipelineIndex(i, GetPipelineType());
-                    m_StaticResourceLayouts[Idx].Initialize(*this, AllowedVarTypes, _countof(AllowedVarTypes), ShaderType);
+                    m_StaticVarsMgrs[Idx].Initialize(*this, AllowedVarTypes, _countof(AllowedVarTypes), ShaderType);
                 }
             }
         }
@@ -118,7 +135,7 @@ PipelineResourceSignatureGLImpl::PipelineResourceSignatureGLImpl(IReferenceCount
 
 SHADER_RESOURCE_RANGE PipelineResourceToShaderResourceRange(const PipelineResourceDesc& Desc)
 {
-    static_assert(SHADER_RESOURCE_TYPE_LAST == SHADER_RESOURCE_TYPE_ACCEL_STRUCT, "AZ TODO");
+    static_assert(SHADER_RESOURCE_TYPE_LAST == SHADER_RESOURCE_TYPE_ACCEL_STRUCT, "Please update the switch below to handle the new shader resource type");
     switch (Desc.ResourceType)
     {
         // clang-format off
@@ -142,8 +159,10 @@ void PipelineResourceSignatureGLImpl::CreateLayouts(const PipelineResourceSignat
 
     for (Uint32 s = 0; s < _countof(CreateInfo.BindingOffsets); ++s)
     {
-        for (Uint32 r = 0; r < _countof(CreateInfo.BindingOffsets[s]); ++r)
+        for (Uint32 r = 0; r < m_FirstBinding.size(); ++r)
         {
+            VERIFY_EXPR(r < _countof(CreateInfo.BindingOffsets[s]));
+
             const auto   Range    = static_cast<SHADER_RESOURCE_RANGE>(r);
             const Uint32 Offset   = CreateInfo.BindingOffsets[s][r];
             m_FirstBinding[Range] = std::max(m_FirstBinding[Range], Offset);
@@ -201,13 +220,13 @@ void PipelineResourceSignatureGLImpl::CreateLayouts(const PipelineResourceSignat
         }
     }
 
-    if (m_StaticResourceCache)
+    if (m_pStaticResCache)
     {
-        m_StaticResourceCache->Initialize(StaticCounter[SHADER_RESOURCE_RANGE_CONSTANT_BUFFER],
-                                          StaticCounter[SHADER_RESOURCE_RANGE_TEXTURE_SRV],
-                                          StaticCounter[SHADER_RESOURCE_RANGE_TEXTURE_UAV],
-                                          StaticCounter[SHADER_RESOURCE_RANGE_BUFFER_UAV],
-                                          GetRawAllocator());
+        m_pStaticResCache->Initialize(StaticCounter[SHADER_RESOURCE_RANGE_CONSTANT_BUFFER],
+                                      StaticCounter[SHADER_RESOURCE_RANGE_TEXTURE_SRV],
+                                      StaticCounter[SHADER_RESOURCE_RANGE_TEXTURE_UAV],
+                                      StaticCounter[SHADER_RESOURCE_RANGE_BUFFER_UAV],
+                                      GetRawAllocator());
         // Set immutable samplers for static resources.
         const auto ResIdxRange = GetResourceIndexRange(SHADER_RESOURCE_VARIABLE_TYPE_STATIC);
 
@@ -236,8 +255,11 @@ void PipelineResourceSignatureGLImpl::CreateLayouts(const PipelineResourceSignat
             }
 
             for (Uint32 ArrInd = 0; ArrInd < ResDesc.ArraySize; ++ArrInd)
-                m_StaticResourceCache->SetSampler(ResAttr.CacheOffset + ArrInd, Sampler);
+                m_pStaticResCache->SetSampler(ResAttr.CacheOffset + ArrInd, Sampler);
         }
+#ifdef DILIGENT_DEVELOPMENT
+        m_pStaticResCache->SetStaticResourcesInitialized();
+#endif
     }
 
 #ifdef DILIGENT_DEVELOPMENT
@@ -290,20 +312,20 @@ void PipelineResourceSignatureGLImpl::Destruct()
         m_ImmutableSamplers = nullptr;
     }
 
-    if (m_StaticResourceLayouts)
+    if (m_StaticVarsMgrs)
     {
         for (auto Idx : m_StaticResStageIndex)
         {
             if (Idx >= 0)
-                m_StaticResourceLayouts[Idx].~GLPipelineResourceLayout();
+                m_StaticVarsMgrs[Idx].~ShaderVariableGL();
         }
-        m_StaticResourceLayouts = nullptr;
+        m_StaticVarsMgrs = nullptr;
     }
 
-    if (m_StaticResourceCache)
+    if (m_pStaticResCache)
     {
-        m_StaticResourceCache->Destroy(RawAllocator);
-        m_StaticResourceCache = nullptr;
+        m_pStaticResCache->Destroy(RawAllocator);
+        m_pStaticResCache = nullptr;
     }
 
     if (void* pRawMem = m_pResourceAttribs)
@@ -334,15 +356,14 @@ void PipelineResourceSignatureGLImpl::ApplyBindings(GLObjectWrappers::GLProgramO
         if ((ResDesc.ShaderStages & Stages) == 0)
             continue;
 
-        //VERIFY_EXPR((Stages & ResDesc.ShaderStages) == ResDesc.ShaderStages);
-
-        static_assert(SHADER_RESOURCE_RANGE_LAST == SHADER_RESOURCE_RANGE_SAMPLER, "AZ TODO");
+        static_assert(SHADER_RESOURCE_RANGE_LAST == SHADER_RESOURCE_RANGE_SAMPLER, "Please update the switch below to handle the new shader resource range");
         switch (Range)
         {
             case SHADER_RESOURCE_RANGE_CONSTANT_BUFFER:
             {
                 auto UniformBlockIndex = glGetUniformBlockIndex(GLProgram, ResDesc.Name);
-                DEV_CHECK_ERR(UniformBlockIndex != GL_INVALID_INDEX, "Failed to get uniform block index for '", ResDesc.Name, "'");
+                if (UniformBlockIndex == GL_INVALID_INDEX)
+                    break; // Uniform block defined in resource signature, but not presented in shader program.
 
                 for (Uint32 ArrInd = 0; ArrInd < ResDesc.ArraySize; ++ArrInd)
                 {
@@ -354,7 +375,9 @@ void PipelineResourceSignatureGLImpl::ApplyBindings(GLObjectWrappers::GLProgramO
             case SHADER_RESOURCE_RANGE_TEXTURE_SRV:
             {
                 auto UniformLocation = glGetUniformLocation(GLProgram, ResDesc.Name);
-                DEV_CHECK_ERR(UniformLocation >= 0, "Failed to get uniform location for '", ResDesc.Name, "'");
+                if (UniformLocation < 0)
+                    break; // Uniform defined in resource signature, but not presented in shader program.
+
                 for (Uint32 ArrInd = 0; ArrInd < ResDesc.ArraySize; ++ArrInd)
                 {
                     glUniform1i(UniformLocation + ArrInd, GetFirstTextureBinding() + ResAttr.CacheOffset + ArrInd);
@@ -366,7 +389,9 @@ void PipelineResourceSignatureGLImpl::ApplyBindings(GLObjectWrappers::GLProgramO
             case SHADER_RESOURCE_RANGE_TEXTURE_UAV:
             {
                 auto UniformLocation = glGetUniformLocation(GLProgram, ResDesc.Name);
-                DEV_CHECK_ERR(UniformLocation >= 0, "Failed to get uniform location for '", ResDesc.Name, "'");
+                if (UniformLocation < 0)
+                    break; // Uniform defined in resource signature, but not presented in shader program.
+
                 for (Uint32 ArrInd = 0; ArrInd < ResDesc.ArraySize; ++ArrInd)
                 {
                     glUniform1i(UniformLocation + ArrInd, GetFirstImageBinding() + ResAttr.CacheOffset + ArrInd);
@@ -379,7 +404,8 @@ void PipelineResourceSignatureGLImpl::ApplyBindings(GLObjectWrappers::GLProgramO
             case SHADER_RESOURCE_RANGE_BUFFER_UAV:
             {
                 auto SBIndex = glGetProgramResourceIndex(GLProgram, GL_SHADER_STORAGE_BLOCK, ResDesc.Name);
-                DEV_CHECK_ERR(SBIndex != GL_INVALID_INDEX, "Failed to get storage block index for '", ResDesc.Name, "'");
+                if (SBIndex == GL_INVALID_INDEX)
+                    break; // Storage block defined in resource signature, but not presented in shader program.
 
                 if (glShaderStorageBlockBinding)
                 {
@@ -391,7 +417,22 @@ void PipelineResourceSignatureGLImpl::ApplyBindings(GLObjectWrappers::GLProgramO
                 }
                 else
                 {
-                    // AZ TODO
+                    const GLenum props[]                 = {GL_BUFFER_BINDING};
+                    GLint        params[_countof(props)] = {};
+                    glGetProgramResourceiv(GLProgram, GL_SHADER_STORAGE_BLOCK, SBIndex, _countof(props), props, _countof(params), nullptr, params);
+                    CHECK_GL_ERROR("glGetProgramResourceiv() failed");
+
+                    Uint32 StorageBufferBinding = GetFirstSSBBinding() + ResAttr.CacheOffset;
+                    if (StorageBufferBinding != static_cast<Uint32>(params[0]))
+                    {
+                        LOG_WARNING_MESSAGE("glShaderStorageBlockBinding is not available on this device and "
+                                            "the engine is unable to automatically assign shader storage block bindindg for '",
+                                            ResDesc.Name, "' variable. Expected binding: ", StorageBufferBinding, ", actual binding: ", params[0],
+                                            ". Make sure that this binding is explicitly assigned in shader source code."
+                                            " Note that if the source code is converted from HLSL and if storage blocks are only used"
+                                            " by a single shader stage, then bindings automatically assigned by HLSL->GLSL"
+                                            " converter will work fine.");
+                    }
                 }
                 break;
             }
@@ -411,38 +452,54 @@ void PipelineResourceSignatureGLImpl::CreateShaderResourceBinding(IShaderResourc
     auto& SRBAllocator    = pRenderDeviceGL->GetSRBAllocator();
     auto  pResBinding     = NEW_RC_OBJ(SRBAllocator, "ShaderResourceBindingGLImpl instance", ShaderResourceBindingGLImpl)(this);
     if (InitStaticResources)
-        pResBinding->InitializeStaticResourcesWithSignature(this);
+        InitializeStaticSRBResources(pResBinding);
     pResBinding->QueryInterface(IID_ShaderResourceBinding, reinterpret_cast<IObject**>(ppShaderResourceBinding));
+}
+
+void PipelineResourceSignatureGLImpl::InitializeStaticSRBResources(IShaderResourceBinding* pSRB) const
+{
+    InitializeStaticSRBResourcesImpl(ValidatedCast<ShaderResourceBindingGLImpl>(pSRB),
+                                     [&](ShaderResourceBindingGLImpl* pSRBGL) //
+                                     {
+                                         CopyStaticResources(pSRBGL->GetResourceCache());
+                                     } //
+    );
 }
 
 Uint32 PipelineResourceSignatureGLImpl::GetStaticVariableCount(SHADER_TYPE ShaderType) const
 {
-    return GetStaticVariableCountImpl(ShaderType, m_StaticResourceLayouts);
+    return GetStaticVariableCountImpl(ShaderType, m_StaticVarsMgrs);
 }
 
 IShaderResourceVariable* PipelineResourceSignatureGLImpl::GetStaticVariableByName(SHADER_TYPE ShaderType, const Char* Name)
 {
-    return GetStaticVariableByNameImpl(ShaderType, Name, m_StaticResourceLayouts);
+    return GetStaticVariableByNameImpl(ShaderType, Name, m_StaticVarsMgrs);
 }
 
 IShaderResourceVariable* PipelineResourceSignatureGLImpl::GetStaticVariableByIndex(SHADER_TYPE ShaderType, Uint32 Index)
 {
-    return GetStaticVariableByIndexImpl(ShaderType, Index, m_StaticResourceLayouts);
+    return GetStaticVariableByIndexImpl(ShaderType, Index, m_StaticVarsMgrs);
 }
 
 void PipelineResourceSignatureGLImpl::BindStaticResources(Uint32            ShaderFlags,
                                                           IResourceMapping* pResMapping,
                                                           Uint32            Flags)
 {
-    BindStaticResourcesImpl(ShaderFlags, pResMapping, Flags, m_StaticResourceLayouts);
+    BindStaticResourcesImpl(ShaderFlags, pResMapping, Flags, m_StaticVarsMgrs);
 }
 
-void PipelineResourceSignatureGLImpl::InitializeStaticSRBResources(GLProgramResourceCache& DstResourceCache) const
+void PipelineResourceSignatureGLImpl::CopyStaticResources(ShaderResourceCacheGL& DstResourceCache) const
 {
+    if (m_pStaticResCache == nullptr)
+        return;
+
     // SrcResourceCache contains only static resources.
     // DstResourceCache contains static, mutable and dynamic resources.
-    const auto& SrcResourceCache = *m_StaticResourceCache;
+    const auto& SrcResourceCache = *m_pStaticResCache;
     const auto  ResIdxRange      = GetResourceIndexRange(SHADER_RESOURCE_VARIABLE_TYPE_STATIC);
+
+    VERIFY_EXPR(SrcResourceCache.GetContentType() == ShaderResourceCacheGL::CacheContentType::Signature);
+    VERIFY_EXPR(DstResourceCache.GetContentType() == ShaderResourceCacheGL::CacheContentType::SRB);
 
     for (Uint32 r = ResIdxRange.first; r < ResIdxRange.second; ++r)
     {
@@ -453,7 +510,7 @@ void PipelineResourceSignatureGLImpl::InitializeStaticSRBResources(GLProgramReso
         if (ResDesc.ResourceType == SHADER_RESOURCE_TYPE_SAMPLER)
             continue; // Skip separate samplers
 
-        static_assert(SHADER_RESOURCE_RANGE_LAST == SHADER_RESOURCE_RANGE_SAMPLER, "AZ TODO");
+        static_assert(SHADER_RESOURCE_RANGE_LAST == SHADER_RESOURCE_RANGE_SAMPLER, "Please update the switch below to handle the new shader resource range");
         switch (PipelineResourceToShaderResourceRange(ResDesc))
         {
             case SHADER_RESOURCE_RANGE_CONSTANT_BUFFER:
@@ -533,9 +590,13 @@ void PipelineResourceSignatureGLImpl::InitializeStaticSRBResources(GLProgramReso
         for (Uint32 ArrInd = 0; ArrInd < ResDesc.ArraySize; ++ArrInd)
             DstResourceCache.SetSampler(ResAttr.CacheOffset + ArrInd, Sampler);
     }
+
+#ifdef DILIGENT_DEVELOPMENT
+    DstResourceCache.SetStaticResourcesInitialized();
+#endif
 }
 
-void PipelineResourceSignatureGLImpl::InitSRBResourceCache(GLProgramResourceCache& ResourceCache) const
+void PipelineResourceSignatureGLImpl::InitSRBResourceCache(ShaderResourceCacheGL& ResourceCache) const
 {
     ResourceCache.Initialize(m_BindingCount[SHADER_RESOURCE_RANGE_CONSTANT_BUFFER],
                              m_BindingCount[SHADER_RESOURCE_RANGE_TEXTURE_SRV],
@@ -569,5 +630,23 @@ bool PipelineResourceSignatureGLImpl::IsCompatibleWith(const PipelineResourceSig
 
     return true;
 }
+
+#ifdef DILIGENT_DEVELOPMENT
+void PipelineResourceSignatureGLImpl::DvpCheckIntersections(Uint32 PrevBindings[SHADER_RESOURCE_RANGE_LAST + 1]) const
+{
+    for (Uint32 r = 0; r < m_FirstBinding.size(); ++r)
+    {
+        if (m_BindingCount[r] > 0)
+        {
+            DEV_CHECK_ERR(m_FirstBinding[r] >= PrevBindings[r],
+                          "Resource signature '", m_Desc.Name, "' with binding index (", Uint32{m_Desc.BindingIndex},
+                          ") intersects in range '", GetShaderResourceRangeName(static_cast<SHADER_RESOURCE_RANGE>(r)),
+                          "': previous binding (", PrevBindings[r], "), current bindings (", m_FirstBinding[r],
+                          "..", m_FirstBinding[r] + m_BindingCount[r], ").");
+        }
+        PrevBindings[r] = std::max(PrevBindings[r], m_FirstBinding[r] + m_BindingCount[r]);
+    }
+}
+#endif
 
 } // namespace Diligent

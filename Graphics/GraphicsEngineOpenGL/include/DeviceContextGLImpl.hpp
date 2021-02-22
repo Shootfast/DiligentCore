@@ -304,7 +304,7 @@ private:
     {
 #ifdef DILIGENT_DEVELOPMENT
         // The SRB's shader resource cache
-        std::array<GLProgramResourceCache const*, MAX_RESOURCE_SIGNATURES> Resources;
+        std::array<ShaderResourceCacheGL const*, MAX_RESOURCE_SIGNATURES> Resources;
 #endif
         // Do not use strong references!
         std::array<ShaderResourceBindingGLImpl*, MAX_RESOURCE_SIGNATURES> SRBs = {};

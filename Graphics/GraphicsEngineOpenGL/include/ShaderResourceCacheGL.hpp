@@ -42,19 +42,26 @@ namespace Diligent
 //   |  0 | 1 | ... | UBCount-1 | 0 | 1 | ...| SmpCount-1 | 0 | 1 | ... | ImgCount-1 | 0 | 1 |  ... | SBOCount-1 |
 //    -----------------------------------------------------------------------------------------------------------
 //
-class GLProgramResourceCache
+class ShaderResourceCacheGL
 {
 public:
-    GLProgramResourceCache() noexcept
+    enum class CacheContentType : Uint8
+    {
+        Signature = 0, // The cache is used by the pipeline resource signature to hold static resources.
+        SRB       = 1  // The cache is used by SRB to hold resources of all types (static, mutable, dynamic).
+    };
+
+    explicit ShaderResourceCacheGL(CacheContentType ContentType) noexcept :
+        m_ContentType{ContentType}
     {}
 
-    ~GLProgramResourceCache();
+    ~ShaderResourceCacheGL();
 
     // clang-format off
-    GLProgramResourceCache             (const GLProgramResourceCache&) = delete;
-    GLProgramResourceCache& operator = (const GLProgramResourceCache&) = delete;
-    GLProgramResourceCache             (GLProgramResourceCache&&)      = delete;
-    GLProgramResourceCache& operator = (GLProgramResourceCache&&)      = delete;
+    ShaderResourceCacheGL             (const ShaderResourceCacheGL&) = delete;
+    ShaderResourceCacheGL& operator = (const ShaderResourceCacheGL&) = delete;
+    ShaderResourceCacheGL             (ShaderResourceCacheGL&&)      = delete;
+    ShaderResourceCacheGL& operator = (ShaderResourceCacheGL&&)      = delete;
     // clang-format on
 
     /// Describes a resource bound to a uniform buffer or a shader storage block slot
@@ -237,25 +244,35 @@ public:
         return m_MemoryEndOffset != InvalidResourceOffset;
     }
 
+    CacheContentType GetContentType() const { return m_ContentType; }
+
+#ifdef DILIGENT_DEVELOPMENT
+    void SetStaticResourcesInitialized()
+    {
+        m_bStaticResourcesInitialized = true;
+    }
+    bool StaticResourcesInitialized() const { return m_bStaticResourcesInitialized; }
+#endif
+
 private:
     CachedUB& GetUB(Uint32 CacheOffset)
     {
-        return const_cast<CachedUB&>(const_cast<const GLProgramResourceCache*>(this)->GetConstUB(CacheOffset));
+        return const_cast<CachedUB&>(const_cast<const ShaderResourceCacheGL*>(this)->GetConstUB(CacheOffset));
     }
 
     CachedResourceView& GetTexture(Uint32 CacheOffset)
     {
-        return const_cast<CachedResourceView&>(const_cast<const GLProgramResourceCache*>(this)->GetConstTexture(CacheOffset));
+        return const_cast<CachedResourceView&>(const_cast<const ShaderResourceCacheGL*>(this)->GetConstTexture(CacheOffset));
     }
 
     CachedResourceView& GetImage(Uint32 CacheOffset)
     {
-        return const_cast<CachedResourceView&>(const_cast<const GLProgramResourceCache*>(this)->GetConstImage(CacheOffset));
+        return const_cast<CachedResourceView&>(const_cast<const ShaderResourceCacheGL*>(this)->GetConstImage(CacheOffset));
     }
 
     CachedSSBO& GetSSBO(Uint32 CacheOffset)
     {
-        return const_cast<CachedSSBO&>(const_cast<const GLProgramResourceCache*>(this)->GetConstSSBO(CacheOffset));
+        return const_cast<CachedSSBO&>(const_cast<const ShaderResourceCacheGL*>(this)->GetConstSSBO(CacheOffset));
     }
 
     static constexpr const Uint16 InvalidResourceOffset = 0xFFFF;
@@ -268,8 +285,14 @@ private:
 
     Uint8* m_pResourceData = nullptr;
 
+    // Indicates what types of resources are stored in the cache
+    const CacheContentType m_ContentType;
+
 #ifdef DILIGENT_DEBUG
     IMemoryAllocator* m_pdbgMemoryAllocator = nullptr;
+#endif
+#ifdef DILIGENT_DEVELOPMENT
+    bool m_bStaticResourcesInitialized = false;
 #endif
 };
 

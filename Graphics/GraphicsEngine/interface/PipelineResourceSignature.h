@@ -34,6 +34,7 @@
 
 #include "../../../Primitives/interface/Object.h"
 #include "../../../Platforms/interface/PlatformDefinitions.h"
+#include "Constants.h"
 #include "GraphicsTypes.h"
 #include "Shader.h"
 #include "Sampler.h"
@@ -233,13 +234,16 @@ struct PipelineResourceSignatureDesc DILIGENT_DERIVE(DeviceObjectAttribs)
 typedef struct PipelineResourceSignatureDesc PipelineResourceSignatureDesc;
 
 
-/// AZ TODO: comment
+/// Pipeline resource signature create info.
 struct PipelineResourceSignatureCreateInfo
 {
-    /// AZ TODO: comment
+    /// Pipeline resource signature description.
     PipelineResourceSignatureDesc Desc;
     
-    /// AZ TODO: comment
+    /// Only for Direct3D11 and OpenGL (ES).
+    /// Used for Vulkan-style descriptor set emulation with a resource signatures.
+    /// Resource signature with binding index N must have binding offsets that greater than
+    /// binding offset plus number of resources in resource signature N-1.
     Uint16 BindingOffsets [DILIGENT_MAX_SHADER_STAGES][SHADER_RESOURCE_RANGE_LAST + 1]  DEFAULT_INITIALIZER({});
     
 #if DILIGENT_CPP_INTERFACE

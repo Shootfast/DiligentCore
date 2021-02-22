@@ -300,7 +300,7 @@ private:
 private:
     ResourceAttribs*            m_pResourceAttribs  = nullptr; // [m_Desc.NumResources]
     ShaderResourceCacheD3D12*   m_pStaticResCache   = nullptr;
-    ShaderVariableManagerD3D12* m_StaticVarsMgrs    = nullptr; // [m_NumShaderStages]
+    ShaderVariableManagerD3D12* m_StaticVarsMgrs    = nullptr; // [GetNumStaticResStages()]
     ImmutableSamplerAttribs*    m_ImmutableSamplers = nullptr; // [m_Desc.NumImmutableSamplers]
 
     RootParamsManager m_RootParams;

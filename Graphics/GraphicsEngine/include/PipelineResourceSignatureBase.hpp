@@ -215,11 +215,12 @@ public:
     }
 
     template <typename TPipelineResourceSignature>
-    static void CopyResourceSignatures(PIPELINE_TYPE                                                                   PipelineType,
-                                       const Uint32                                                                    SignatureCount,
-                                       IPipelineResourceSignature**                                                    ppResourceSignatures,
-                                       std::array<RefCntAutoPtr<TPipelineResourceSignature>, MAX_RESOURCE_SIGNATURES>& DstSignatures,
-                                       Uint8&                                                                          DstSignatureCount)
+    static void CopyResourceSignatures(PIPELINE_TYPE                              PipelineType,
+                                       const Uint32                               SignatureCount,
+                                       IPipelineResourceSignature**               ppResourceSignatures,
+                                       RefCntAutoPtr<TPipelineResourceSignature>* DstSignatures,
+                                       const size_t                               MaxDstSignatureCount,
+                                       Uint8&                                     DstSignatureCount)
     {
         for (Uint32 i = 0; i < SignatureCount; ++i)
         {
@@ -229,8 +230,8 @@ public:
             const Uint8 Index = pSignature->GetDesc().BindingIndex;
 
 #ifdef DILIGENT_DEBUG
-            VERIFY(Index < DstSignatures.size(),
-                   "Pipeline resource signature specifies binding index ", Uint32{Index}, " that exceeds the limit (", DstSignatures.size() - 1,
+            VERIFY(Index < MaxDstSignatureCount,
+                   "Pipeline resource signature specifies binding index ", Uint32{Index}, " that exceeds the limit (", MaxDstSignatureCount - 1,
                    "). This error should've been caught by ValidatePipelineResourceSignatureDesc.");
 
             VERIFY(DstSignatures[Index] == nullptr,

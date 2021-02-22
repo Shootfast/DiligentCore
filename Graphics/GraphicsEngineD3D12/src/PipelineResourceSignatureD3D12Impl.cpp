@@ -784,6 +784,10 @@ struct BindResourceHelper
     PipelineResourceSignatureD3D12Impl const&                  Signature;
     ShaderResourceCacheD3D12&                                  ResourceCache;
 
+#ifdef DILIGENT_DEVELOPMENT
+    bool dvpIsCombinedSampler = false;
+#endif
+
     void BindResource(IDeviceObject* pObj) const;
 
 private:
@@ -1085,6 +1089,9 @@ void BindResourceHelper::BindResource(IDeviceObject* pObj) const
                                         CPUDescriptorHandle,
                                         Signature,
                                         ResourceCache};
+#ifdef DILIGENT_DEVELOPMENT
+                                    SeparateSampler.dvpIsCombinedSampler = true;
+#endif
                                     SeparateSampler.BindResource(pSampler);
                                 }
                                 else
@@ -1109,7 +1116,7 @@ void BindResourceHelper::BindResource(IDeviceObject* pObj) const
                 break;
 
             case SHADER_RESOURCE_TYPE_SAMPLER:
-                //DEV_CHECK_ERR(Signature.IsUsingSeparateSamplers(), "Samplers should not be set directly when using combined texture samplers");
+                DEV_CHECK_ERR(dvpIsCombinedSampler || Signature.IsUsingSeparateSamplers(), "Samplers should not be set directly when using combined texture samplers");
                 CacheSampler(pObj);
                 break;
 

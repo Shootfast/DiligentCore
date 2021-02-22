@@ -635,14 +635,13 @@ void DeviceContextGLImpl::EndRenderPass()
 
 void DeviceContextGLImpl::BindProgramResources(MEMORY_BARRIER& NewMemoryBarriers, IShaderResourceBinding* pResBinding)
 {
-    auto*      pShaderResBindingGL = ValidatedCast<ShaderResourceBindingGLImpl>(pResBinding);
-    const auto SRBIndex            = pShaderResBindingGL->GetBindingIndex();
+    auto*       pShaderResBindingGL = ValidatedCast<ShaderResourceBindingGLImpl>(pResBinding);
+    const auto  SRBIndex            = pShaderResBindingGL->GetBindingIndex();
+    const auto& ResourceCache       = pShaderResBindingGL->GetResourceCache();
+    const auto* pSignature          = pShaderResBindingGL->GetSignature();
 
-    if (m_BindInfo.SRBs[SRBIndex] == pShaderResBindingGL)
+    if (m_BindInfo.SRBs[SRBIndex] == pShaderResBindingGL && !pSignature->HasDynamicResources())
         return;
-
-    const auto& ResourceCache = pShaderResBindingGL->GetResourceCache();
-    const auto* pSignature    = pShaderResBindingGL->GetSignature();
 
     VERIFY_EXPR(m_BoundWritableTextures.empty());
     VERIFY_EXPR(m_BoundWritableBuffers.empty());
@@ -680,7 +679,7 @@ void DeviceContextGLImpl::BindProgramResources(MEMORY_BARRIER& NewMemoryBarriers
             auto* pTexViewGL = Sam.pView.RawPtr<TextureViewGLImpl>();
             auto* pTextureGL = ValidatedCast<TextureBaseGL>(Sam.pTexture);
             VERIFY_EXPR(pTextureGL == pTexViewGL->GetTexture());
-            m_ContextState.BindTexture(s, pTexViewGL->GetBindTarget(), pTexViewGL->GetHandle());
+            m_ContextState.BindTexture(binding, pTexViewGL->GetBindTarget(), pTexViewGL->GetHandle());
 
             pTextureGL->TextureMemoryBarrier(
                 MEMORY_BARRIER_TEXTURE_FETCH, // Texture fetches from shaders, including fetches from buffer object
@@ -785,12 +784,12 @@ void DeviceContextGLImpl::BindProgramResources(MEMORY_BARRIER& NewMemoryBarriers
             VERIFY(ViewDesc.ViewType == BUFFER_VIEW_UNORDERED_ACCESS, "Unexpected buffer view type");
 
             pBufferGL->BufferMemoryBarrier(
-                MEMORY_BARRIER_TEXEL_BUFFER_STORAGE, // Memory accesses using shader image load, store, and atomic built-in
-                                                     // functions issued after the barrier will reflect data written by shaders
-                                                     // prior to the barrier. Additionally, image stores and atomics issued after
-                                                     // the barrier will not execute until all memory accesses (e.g., loads,
-                                                     // stores, texture fetches, vertex fetches) initiated prior to the barrier
-                                                     // complete.
+                MEMORY_BARRIER_IMAGE_BUFFER, // Memory accesses using shader image load, store, and atomic built-in
+                                             // functions issued after the barrier will reflect data written by shaders
+                                             // prior to the barrier. Additionally, image stores and atomics issued after
+                                             // the barrier will not execute until all memory accesses (e.g., loads,
+                                             // stores, texture fetches, vertex fetches) initiated prior to the barrier
+                                             // complete.
                 m_ContextState);
 
             m_BoundWritableBuffers.push_back(pBufferGL);

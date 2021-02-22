@@ -539,7 +539,19 @@ void PipelineStateD3D12Impl::InitRootSignature(const PipelineStateCreateInfo& Cr
     }
     else
     {
-        //PipelineResourceSignatureD3D12Impl::CopyResourceSignatures(CreateInfo.PSODesc.PipelineType, SignatureCount, CreateInfo.ppResourceSignatures, m_Signatures, m_SignatureCount);
+        Uint32 MaxSignatureBindingIndex = 0;
+        for (Uint32 i = 0; i < CreateInfo.ResourceSignaturesCount; ++i)
+        {
+            auto* pSignature = ValidatedCast<PipelineResourceSignatureD3D12Impl>(CreateInfo.ppResourceSignatures[i]);
+            VERIFY(pSignature != nullptr, "Pipeline resource signature at index ", i, " is null. This error should've been caught by ValidatePipelineResourceSignatures.");
+            MaxSignatureBindingIndex = std::max(MaxSignatureBindingIndex, Uint32{pSignature->GetDesc().BindingIndex});
+        }
+        SignatureCount = MaxSignatureBindingIndex + 1;
+        m_ResourceSignatures.reset(new RefCntAutoPtr<PipelineResourceSignatureD3D12Impl>[SignatureCount]);
+
+        Uint8 UnusedSignatureCount = 0;
+        PipelineResourceSignatureD3D12Impl::CopyResourceSignatures(CreateInfo.PSODesc.PipelineType, CreateInfo.ResourceSignaturesCount, CreateInfo.ppResourceSignatures,
+                                                                   m_ResourceSignatures.get(), SignatureCount, UnusedSignatureCount);
     }
 
     m_RootSig = GetDevice()->GetRootSignatureCache().GetRootSig(m_ResourceSignatures.get(), SignatureCount);

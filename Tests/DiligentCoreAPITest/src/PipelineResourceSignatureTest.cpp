@@ -295,9 +295,12 @@ TEST_F(PipelineResourceSignatureTest, VariableTypes)
     SET_STATIC_VAR(pPRS, SHADER_TYPE_VERTEX, "g_Tex2D_Static", Set, RefTextures.GetViewObjects(Tex2D_StaticIdx)[0]);
     SET_STATIC_VAR(pPRS, SHADER_TYPE_VERTEX, "g_Tex2DArr_Static", SetArray, RefTextures.GetViewObjects(Tex2DArr_StaticIdx), 0, StaticTexArraySize);
 
-    RefCntAutoPtr<ISampler> pSampler;
-    pDevice->CreateSampler(SamplerDesc{}, &pSampler);
-    SET_STATIC_VAR(pPRS, SHADER_TYPE_VERTEX, "g_Sampler", Set, pSampler);
+    if (!pDevice->GetDeviceCaps().IsGLDevice())
+    {
+        RefCntAutoPtr<ISampler> pSampler;
+        pDevice->CreateSampler(SamplerDesc{}, &pSampler);
+        SET_STATIC_VAR(pPRS, SHADER_TYPE_VERTEX, "g_Sampler", Set, pSampler);
+    }
 
     RefCntAutoPtr<IShaderResourceBinding> pSRB;
     pPRS->CreateShaderResourceBinding(&pSRB, true);
@@ -386,6 +389,9 @@ TEST_F(PipelineResourceSignatureTest, MultiSignatures)
         PRSCI.Desc.Resources    = Resources[i].data();
         PRSCI.Desc.NumResources = static_cast<Uint32>(Resources[i].size());
 
+        PRSCI.BindingOffsets[SHADER_TYPE_VERTEX][SHADER_RESOURCE_RANGE_TEXTURE_SRV] += 4;
+        PRSCI.BindingOffsets[SHADER_TYPE_PIXEL][SHADER_RESOURCE_RANGE_TEXTURE_SRV] += 4;
+
         pDevice->CreatePipelineResourceSignature(PRSCI, &pPRS[i]);
         ASSERT_TRUE(pPRS[i]);
     }
@@ -396,9 +402,12 @@ TEST_F(PipelineResourceSignatureTest, MultiSignatures)
     SET_STATIC_VAR(pPRS[0], SHADER_TYPE_VERTEX, "g_Tex2D_1", Set, RefTextures.GetView(0));
     SET_STATIC_VAR(pPRS[1], SHADER_TYPE_VERTEX, "g_Tex2D_3", Set, RefTextures.GetView(2));
 
-    RefCntAutoPtr<ISampler> pSampler;
-    pDevice->CreateSampler(SamplerDesc{}, &pSampler);
-    SET_STATIC_VAR(pPRS[2], SHADER_TYPE_PIXEL, "g_Sampler", Set, pSampler);
+    if (!pDevice->GetDeviceCaps().IsGLDevice())
+    {
+        RefCntAutoPtr<ISampler> pSampler;
+        pDevice->CreateSampler(SamplerDesc{}, &pSampler);
+        SET_STATIC_VAR(pPRS[2], SHADER_TYPE_PIXEL, "g_Sampler", Set, pSampler);
+    }
 
     for (Uint32 i = 0; i < _countof(pPRS); ++i)
     {
@@ -640,6 +649,11 @@ TEST_F(PipelineResourceSignatureTest, ImmutableSamplers2)
     auto* pDevice  = pEnv->GetDevice();
     auto* pContext = pEnv->GetDeviceContext();
 
+    if (pDevice->GetDeviceCaps().IsGLDevice())
+    {
+        GTEST_SKIP() << "Not supported in OpenGL";
+    }
+
     TestingEnvironment::ScopedReset EnvironmentAutoReset;
 
     auto* pSwapChain = pEnv->GetSwapChain();
@@ -867,6 +881,8 @@ TEST_F(PipelineResourceSignatureTest, SRBCompatibility)
         PRSCI.Desc.UseCombinedTextureSamplers = true;
         PRSCI.Desc.CombinedSamplerSuffix      = "_sampler";
         PRSCI.Desc.BindingIndex               = 3;
+
+        PRSCI.BindingOffsets[SHADER_TYPE_PIXEL][SHADER_RESOURCE_RANGE_TEXTURE_SRV] = 1;
 
         pDevice->CreatePipelineResourceSignature(PRSCI, &pSignature3);
         ASSERT_NE(pSignature3, nullptr);

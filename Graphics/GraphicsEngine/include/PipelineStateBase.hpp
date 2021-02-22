@@ -447,8 +447,8 @@ protected:
                        "Shader stage ", GetShaderTypeLiteralName(ShaderType), " has already been initialized in PSO '", this->m_Desc.Name, "'.");
                 m_ActiveShaderStages |= ShaderType;
 #ifdef DILIGENT_DEBUG
-                //for (Uint32 i = 0; i + 1 < ShaderStages.size(); ++i) // AZ TODO
-                //    VERIFY_EXPR(ShaderStages[i].Type != ShaderType);
+                for (Uint32 i = 0; i + 1 < ShaderStages.size(); ++i)
+                    VERIFY_EXPR(ShaderStages[i].Type != ShaderType);
 #endif
             }
         };

@@ -13,8 +13,8 @@ set(INCLUDE
     include/GLContext.hpp
     include/GLContextState.hpp
     include/GLObjectWrapper.hpp
-    include/GLProgramResourceCache.hpp
-    include/GLPipelineResourceLayout.hpp
+    include/ShaderResourceCacheGL.hpp
+    include/ShaderVariableGL.hpp
     include/GLProgramResources.hpp
     include/GLTypeConversions.hpp
     include/pch.h
@@ -68,8 +68,8 @@ set(SOURCE
     src/FramebufferGLImpl.cpp
     src/GLContextState.cpp
     src/GLObjectWrapper.cpp
-    src/GLProgramResourceCache.cpp
-    src/GLPipelineResourceLayout.cpp
+    src/ShaderResourceCacheGL.cpp
+    src/ShaderVariableGL.cpp
     src/GLProgramResources.cpp
     src/GLTypeConversions.cpp
     src/PipelineStateGLImpl.cpp

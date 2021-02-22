@@ -27,7 +27,7 @@
 
 #pragma once
 
-// GLPipelineResourceLayout class manages resource bindings for all stages in a pipeline
+// ShaderVariableGL class manages resource bindings for all stages in a pipeline
 
 //
 //
@@ -45,7 +45,7 @@
 //                                               Ref                                  Ref                      Ref                          Ref
 //    .-==========================-.         _____|____________________________________|________________________|____________________________|______________
 //    ||                          ||        |           |           |       |            |            |       |            |         |           |          |
-//  __|| GLPipelineResourceLayout ||------->| UBInfo[0] | UBInfo[1] |  ...  | SamInfo[0] | SamInfo[1] |  ...  | ImgInfo[0] |   ...   |  SSBO[0]  |   ...    |
+//  __||     ShaderVariableGL     ||------->| UBInfo[0] | UBInfo[1] |  ...  | SamInfo[0] | SamInfo[1] |  ...  | ImgInfo[0] |   ...   |  SSBO[0]  |   ...    |
 // |  ||                          ||        |___________|___________|_______|____________|____________|_______|____________|_________|___________|__________|
 // |  '-==========================-'                     /                                         \
 // |                                                   Ref                                         Ref
@@ -59,11 +59,11 @@
 // |                                             |           |                |         |                |        |                |           |
 // |    _______________________              ____V___________V________________V_________V________________V________V________________V___________V_____________
 // |   |                       |            |                           |                           |                           |                           |
-// '-->|GLProgramResourceCache |----------->|      Uinform Buffers      |          Textures         |          Images           |       Storge Buffers      |
+// '-->| ShaderResourceCacheGL |----------->|      Uinform Buffers      |          Textures         |          Images           |       Storge Buffers      |
 //     |_______________________|            |___________________________|___________________________|___________________________|___________________________|
 //
 //
-// Note that GLProgramResources are kept by PipelineStateGLImpl. GLPipelineResourceLayout class is either part of the same PSO class,
+// Note that GLProgramResources are kept by PipelineStateGLImpl. ShaderVariableGL class is either part of the same PSO class,
 // or part of ShaderResourceBindingGLImpl object that keeps a strong reference to the pipeline. So all references from GLVariableBase
 // are always valid.
 
@@ -71,29 +71,29 @@
 
 #include "Object.h"
 #include "ShaderResourceVariableBase.hpp"
-#include "GLProgramResourceCache.hpp"
+#include "ShaderResourceCacheGL.hpp"
 #include "PipelineResourceSignatureGLImpl.hpp"
 
 namespace Diligent
 {
 
-// sizeof(GLPipelineResourceLayout) == 32 (x64, msvc, Release)
-class GLPipelineResourceLayout
+// sizeof(ShaderVariableGL) == 48 (x64, msvc, Release)
+class ShaderVariableGL
 {
 public:
-    GLPipelineResourceLayout(IObject& Owner, GLProgramResourceCache& ResourceCache) :
+    ShaderVariableGL(IObject& Owner, ShaderResourceCacheGL& ResourceCache) noexcept :
         m_Owner(Owner),
         m_ResourceCache{ResourceCache}
     {}
 
-    ~GLPipelineResourceLayout();
+    ~ShaderVariableGL();
 
     // No copies, only moves are allowed
     // clang-format off
-    GLPipelineResourceLayout             (const GLPipelineResourceLayout&)  = delete;
-    GLPipelineResourceLayout& operator = (const GLPipelineResourceLayout&)  = delete;
-    GLPipelineResourceLayout             (      GLPipelineResourceLayout&&) = default;
-    GLPipelineResourceLayout& operator = (      GLPipelineResourceLayout&&) = delete;
+    ShaderVariableGL             (const ShaderVariableGL&)  = delete;
+    ShaderVariableGL& operator = (const ShaderVariableGL&)  = delete;
+    ShaderVariableGL             (      ShaderVariableGL&&) = default;
+    ShaderVariableGL& operator = (      ShaderVariableGL&&) = delete;
     // clang-format on
 
     void Initialize(const PipelineResourceSignatureGLImpl& Signature,
@@ -120,10 +120,10 @@ public:
     }
 
 
-    struct GLVariableBase : public ShaderVariableBase<GLPipelineResourceLayout>
+    struct GLVariableBase : public ShaderVariableBase<ShaderVariableGL>
     {
-        using TBase = ShaderVariableBase<GLPipelineResourceLayout>;
-        GLVariableBase(GLPipelineResourceLayout& ParentLayout, Uint32 ResIndex) :
+        using TBase = ShaderVariableBase<ShaderVariableGL>;
+        GLVariableBase(ShaderVariableGL& ParentLayout, Uint32 ResIndex) :
             TBase{ParentLayout},
             m_ResIndex{ResIndex}
         {}
@@ -155,7 +155,7 @@ public:
 
     struct UniformBuffBindInfo final : GLVariableBase
     {
-        UniformBuffBindInfo(GLPipelineResourceLayout& ParentLayout, Uint32 ResIndex) :
+        UniformBuffBindInfo(ShaderVariableGL& ParentLayout, Uint32 ResIndex) :
             GLVariableBase{ParentLayout, ResIndex}
         {}
 
@@ -187,7 +187,7 @@ public:
 
     struct SamplerBindInfo final : GLVariableBase
     {
-        SamplerBindInfo(GLPipelineResourceLayout& ParentLayout, Uint32 ResIndex) :
+        SamplerBindInfo(ShaderVariableGL& ParentLayout, Uint32 ResIndex) :
             GLVariableBase{ParentLayout, ResIndex}
         {}
 
@@ -219,7 +219,7 @@ public:
 
     struct ImageBindInfo final : GLVariableBase
     {
-        ImageBindInfo(GLPipelineResourceLayout& ParentLayout, Uint32 ResIndex) :
+        ImageBindInfo(ShaderVariableGL& ParentLayout, Uint32 ResIndex) :
             GLVariableBase{ParentLayout, ResIndex}
         {}
 
@@ -251,7 +251,7 @@ public:
 
     struct StorageBufferBindInfo final : GLVariableBase
     {
-        StorageBufferBindInfo(GLPipelineResourceLayout& ParentLayout, Uint32 ResIndex) :
+        StorageBufferBindInfo(ShaderVariableGL& ParentLayout, Uint32 ResIndex) :
             GLVariableBase{ParentLayout, ResIndex}
         {}
 
@@ -286,7 +286,7 @@ public:
     void BindResources(IResourceMapping* pResourceMapping, Uint32 Flags);
 
 #ifdef DILIGENT_DEVELOPMENT
-    bool dvpVerifyBindings(const GLProgramResourceCache& ResourceCache) const;
+    bool dvpVerifyBindings(const ShaderResourceCacheGL& ResourceCache) const;
 #endif
 
     IShaderResourceVariable* GetVariable(const Char* Name) const;
@@ -405,7 +405,7 @@ private:
     IObject& m_Owner;
     // No need to use shared pointer, as the resource cache is either part of the same
     // ShaderGLImpl object, or ShaderResourceBindingGLImpl object
-    GLProgramResourceCache&                       m_ResourceCache;
+    ShaderResourceCacheGL&                        m_ResourceCache;
     std::unique_ptr<void, STDDeleterRawMem<void>> m_ResourceBuffer;
 
     static constexpr OffsetType m_UBOffset            = 0;
@@ -416,27 +416,26 @@ private:
 };
 
 
-
 template <>
-inline Uint32 GLPipelineResourceLayout::GetNumResources<GLPipelineResourceLayout::UniformBuffBindInfo>() const
+inline Uint32 ShaderVariableGL::GetNumResources<ShaderVariableGL::UniformBuffBindInfo>() const
 {
     return GetNumUBs();
 }
 
 template <>
-inline Uint32 GLPipelineResourceLayout::GetNumResources<GLPipelineResourceLayout::SamplerBindInfo>() const
+inline Uint32 ShaderVariableGL::GetNumResources<ShaderVariableGL::SamplerBindInfo>() const
 {
     return GetNumTextures();
 }
 
 template <>
-inline Uint32 GLPipelineResourceLayout::GetNumResources<GLPipelineResourceLayout::ImageBindInfo>() const
+inline Uint32 ShaderVariableGL::GetNumResources<ShaderVariableGL::ImageBindInfo>() const
 {
     return GetNumImages();
 }
 
 template <>
-inline Uint32 GLPipelineResourceLayout::GetNumResources<GLPipelineResourceLayout::StorageBufferBindInfo>() const
+inline Uint32 ShaderVariableGL::GetNumResources<ShaderVariableGL::StorageBufferBindInfo>() const
 {
     return GetNumStorageBuffers();
 }
@@ -444,29 +443,29 @@ inline Uint32 GLPipelineResourceLayout::GetNumResources<GLPipelineResourceLayout
 
 
 template <>
-inline GLPipelineResourceLayout::OffsetType GLPipelineResourceLayout::
-    GetResourceOffset<GLPipelineResourceLayout::UniformBuffBindInfo>() const
+inline ShaderVariableGL::OffsetType ShaderVariableGL::
+    GetResourceOffset<ShaderVariableGL::UniformBuffBindInfo>() const
 {
     return m_UBOffset;
 }
 
 template <>
-inline GLPipelineResourceLayout::OffsetType GLPipelineResourceLayout::
-    GetResourceOffset<GLPipelineResourceLayout::SamplerBindInfo>() const
+inline ShaderVariableGL::OffsetType ShaderVariableGL::
+    GetResourceOffset<ShaderVariableGL::SamplerBindInfo>() const
 {
     return m_TextureOffset;
 }
 
 template <>
-inline GLPipelineResourceLayout::OffsetType GLPipelineResourceLayout::
-    GetResourceOffset<GLPipelineResourceLayout::ImageBindInfo>() const
+inline ShaderVariableGL::OffsetType ShaderVariableGL::
+    GetResourceOffset<ShaderVariableGL::ImageBindInfo>() const
 {
     return m_ImageOffset;
 }
 
 template <>
-inline GLPipelineResourceLayout::OffsetType GLPipelineResourceLayout::
-    GetResourceOffset<GLPipelineResourceLayout::StorageBufferBindInfo>() const
+inline ShaderVariableGL::OffsetType ShaderVariableGL::
+    GetResourceOffset<ShaderVariableGL::StorageBufferBindInfo>() const
 {
     return m_StorageBufferOffset;
 }

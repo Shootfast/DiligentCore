@@ -36,8 +36,13 @@
 namespace Diligent
 {
 
+PipelineStateGLImpl::ShaderStageInfo::ShaderStageInfo(ShaderGLImpl* _pShader) :
+    Type{_pShader->GetDesc().ShaderType},
+    pShader{_pShader}
+{}
+
 void PipelineStateGLImpl::CreateDefaultSignature(const PipelineStateCreateInfo& CreateInfo,
-                                                 std::vector<ShaderGLImpl*>&    Shaders,
+                                                 TShaderStages&                 Shaders,
                                                  SHADER_TYPE                    ActiveStages,
                                                  IPipelineResourceSignature**   ppSignature)
 {
@@ -86,7 +91,7 @@ void PipelineStateGLImpl::CreateDefaultSignature(const PipelineStateCreateInfo& 
     {
         for (size_t i = 0; i < Shaders.size(); ++i)
         {
-            auto* pShaderGL = Shaders[i];
+            auto* pShaderGL = Shaders[i].pShader;
             pShaderGL->GetShaderResources().ProcessResources(HandleUB, HandleTexture, HandleImage, HandleSB);
         }
     }
@@ -133,7 +138,7 @@ void PipelineStateGLImpl::CreateDefaultSignature(const PipelineStateCreateInfo& 
 }
 
 void PipelineStateGLImpl::InitResourceLayouts(const PipelineStateCreateInfo& CreateInfo,
-                                              std::vector<ShaderGLImpl*>&    Shaders,
+                                              TShaderStages&                 Shaders,
                                               SHADER_TYPE                    ActiveStages)
 {
     const Uint32                              SignatureCount = CreateInfo.ResourceSignaturesCount;
@@ -151,7 +156,8 @@ void PipelineStateGLImpl::InitResourceLayouts(const PipelineStateCreateInfo& Cre
     }
     else
     {
-        PipelineResourceSignatureGLImpl::CopyResourceSignatures(CreateInfo.PSODesc.PipelineType, SignatureCount, CreateInfo.ppResourceSignatures, m_Signatures, m_SignatureCount);
+        PipelineResourceSignatureGLImpl::CopyResourceSignatures(CreateInfo.PSODesc.PipelineType, SignatureCount, CreateInfo.ppResourceSignatures,
+                                                                m_Signatures.data(), m_Signatures.size(), m_SignatureCount);
     }
 
     // Apply resource bindings to programs.
@@ -174,11 +180,23 @@ void PipelineStateGLImpl::InitResourceLayouts(const PipelineStateCreateInfo& Cre
         }
     }
 
-    // AZ TODO: check resource bindings
+#ifdef DILIGENT_DEVELOPMENT
+    {
+        Uint32 Bindings[SHADER_RESOURCE_RANGE_LAST + 1] = {};
+        for (Uint32 s = 0; s < m_SignatureCount; ++s)
+        {
+            PipelineResourceSignatureGLImpl* pSignature = m_Signatures[s];
+            if (pSignature == nullptr)
+                continue;
+
+            pSignature->DvpCheckIntersections(Bindings);
+        }
+    }
+#endif
 }
 
 template <typename PSOCreateInfoType>
-void PipelineStateGLImpl::InitInternalObjects(const PSOCreateInfoType& CreateInfo, std::vector<ShaderGLImpl*>& Shaders)
+void PipelineStateGLImpl::InitInternalObjects(const PSOCreateInfoType& CreateInfo, TShaderStages& Shaders)
 {
     const auto& deviceCaps = GetDevice()->GetDeviceCaps();
     VERIFY(deviceCaps.DevType != RENDER_DEVICE_TYPE_UNDEFINED, "Device caps are not initialized");
@@ -196,9 +214,9 @@ void PipelineStateGLImpl::InitInternalObjects(const PSOCreateInfoType& CreateInf
 
     // Get active shader stages.
     SHADER_TYPE ActiveStages = SHADER_TYPE_UNKNOWN;
-    for (auto* pShader : Shaders)
+    for (auto& Stage : Shaders)
     {
-        const auto ShaderType = pShader->GetDesc().ShaderType;
+        const auto ShaderType = Stage.pShader->GetDesc().ShaderType;
         VERIFY((ActiveStages & ShaderType) == 0, "Shader stage ", GetShaderTypeLiteralName(ShaderType), " is already active");
         ActiveStages |= ShaderType;
     }
@@ -209,8 +227,8 @@ void PipelineStateGLImpl::InitInternalObjects(const PSOCreateInfoType& CreateInf
         m_GLPrograms = MemPool.ConstructArray<GLProgramObj>(Shaders.size(), false);
         for (size_t i = 0; i < Shaders.size(); ++i)
         {
-            auto* pShaderGL  = Shaders[i];
-            m_GLPrograms[i]  = GLProgramObj{ShaderGLImpl::LinkProgram(&pShaderGL, 1, true)};
+            auto* pShaderGL  = Shaders[i].pShader;
+            m_GLPrograms[i]  = GLProgramObj{ShaderGLImpl::LinkProgram(&Shaders[i], 1, true)};
             m_ShaderTypes[i] = pShaderGL->GetDesc().ShaderType;
         }
         m_NumPrograms = static_cast<Uint8>(Shaders.size());
@@ -242,7 +260,7 @@ PipelineStateGLImpl::PipelineStateGLImpl(IReferenceCounters*                    
 {
     try
     {
-        std::vector<ShaderGLImpl*> Shaders;
+        TShaderStages Shaders;
         ExtractShaders<ShaderGLImpl>(CreateInfo, Shaders);
 
         RefCntAutoPtr<ShaderGLImpl> pTempPS;
@@ -284,7 +302,7 @@ PipelineStateGLImpl::PipelineStateGLImpl(IReferenceCounters*                   p
 {
     try
     {
-        std::vector<ShaderGLImpl*> Shaders;
+        TShaderStages Shaders;
         ExtractShaders<ShaderGLImpl>(CreateInfo, Shaders);
 
         InitInternalObjects(CreateInfo, Shaders);

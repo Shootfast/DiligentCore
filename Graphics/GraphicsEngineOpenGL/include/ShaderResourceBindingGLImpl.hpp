@@ -34,8 +34,8 @@
 #include "RenderDeviceGL.h"
 #include "ShaderResourceBindingBase.hpp"
 #include "GLProgramResources.hpp"
-#include "GLProgramResourceCache.hpp"
-#include "GLPipelineResourceLayout.hpp"
+#include "ShaderResourceCacheGL.hpp"
+#include "ShaderVariableGL.hpp"
 #include "PipelineResourceSignatureGLImpl.hpp"
 
 namespace Diligent
@@ -48,8 +48,7 @@ public:
     using TBase = ShaderResourceBindingBase<IShaderResourceBindingGL, PipelineResourceSignatureGLImpl>;
 
     ShaderResourceBindingGLImpl(IReferenceCounters*              pRefCounters,
-                                PipelineResourceSignatureGLImpl* pPRS,
-                                bool                             IsDeviceInternal = false);
+                                PipelineResourceSignatureGLImpl* pPRS);
     ~ShaderResourceBindingGLImpl();
 
     virtual void DILIGENT_CALL_TYPE QueryInterface(const INTERFACE_ID& IID, IObject** ppInterface) override final;
@@ -68,29 +67,16 @@ public:
     /// Implementation of IShaderResourceBinding::GetVariableByIndex() in OpenGL backend.
     virtual IShaderResourceVariable* DILIGENT_CALL_TYPE GetVariableByIndex(SHADER_TYPE ShaderType, Uint32 Index) override final;
 
-    /// Implementation of IShaderResourceBinding::InitializeStaticResources() in OpenGL backend.
-    virtual void DILIGENT_CALL_TYPE InitializeStaticResources(const IPipelineState* pPipelineState) override final;
-
-    /// Implementation of IShaderResourceBinding::InitializeStaticResourcesWithSignature() in OpenGL backend.
-    virtual void DILIGENT_CALL_TYPE InitializeStaticResourcesWithSignature(const IPipelineResourceSignature* pResourceSignature) override final;
-
-    const GLProgramResourceCache& GetResourceCache() const { return m_ResourceCache; }
+    ShaderResourceCacheGL& GetResourceCache() { return m_ShaderResourceCache; }
 
 private:
     void Destruct();
 
-    std::array<Int8, MAX_SHADERS_IN_PIPELINE> m_ShaderVarIndex = {-1, -1, -1, -1, -1, -1};
-    static_assert(MAX_SHADERS_IN_PIPELINE == 6, "Please update the initializer list above");
-
-    bool m_bStaticResourcesInitialized = false;
-
-    const Uint8 m_NumShaders = 0;
-
     // The resource cache holds resource bindings for all variables
-    GLProgramResourceCache m_ResourceCache;
+    ShaderResourceCacheGL m_ShaderResourceCache;
 
     // The resource layout only references mutable and dynamic variables
-    GLPipelineResourceLayout* m_ResourceLayouts = nullptr; // [m_NumShaders]
+    ShaderVariableGL* m_pShaderVarMgrs = nullptr; // [GetNumShaders()]
 };
 
 } // namespace Diligent

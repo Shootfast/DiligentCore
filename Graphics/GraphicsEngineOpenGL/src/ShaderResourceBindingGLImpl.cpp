@@ -35,50 +35,47 @@ namespace Diligent
 {
 
 ShaderResourceBindingGLImpl::ShaderResourceBindingGLImpl(IReferenceCounters*              pRefCounters,
-                                                         PipelineResourceSignatureGLImpl* pPRS,
-                                                         bool                             IsDeviceInternal) :
+                                                         PipelineResourceSignatureGLImpl* pPRS) :
     // clang-format off
     TBase
     {
         pRefCounters,
-        pPRS,
-        IsDeviceInternal
+        pPRS
     },
-    m_ResourceCache{},
-    m_NumShaders{static_cast<decltype(m_NumShaders)>(pPRS->GetNumActiveShaderStages())}
+    m_ShaderResourceCache{ShaderResourceCacheGL::CacheContentType::SRB}
 // clang-format on
 {
     try
     {
-        m_ShaderVarIndex.fill(-1);
+        const auto NumShaders = GetNumShaders();
 
         FixedLinearAllocator MemPool{GetRawAllocator()};
-        MemPool.AddSpace<GLPipelineResourceLayout>(m_NumShaders);
+        MemPool.AddSpace<ShaderVariableGL>(NumShaders);
         MemPool.Reserve();
-        m_ResourceLayouts = MemPool.ConstructArray<GLPipelineResourceLayout>(m_NumShaders, std::ref(*this), std::ref(m_ResourceCache));
+        m_pShaderVarMgrs = MemPool.ConstructArray<ShaderVariableGL>(NumShaders, std::ref(*this), std::ref(m_ShaderResourceCache));
 
         // The memory is now owned by ShaderResourceBindingVkImpl and will be freed by Destruct().
         auto* Ptr = MemPool.ReleaseOwnership();
-        VERIFY_EXPR(Ptr == m_ResourceLayouts);
+        VERIFY_EXPR(Ptr == m_pShaderVarMgrs);
         (void)Ptr;
 
         // It is important to construct all objects before initializing them because if an exception is thrown,
         // destructors will be called for all objects
 
-        pPRS->InitSRBResourceCache(m_ResourceCache);
+        pPRS->InitSRBResourceCache(m_ShaderResourceCache);
 
-        for (Uint32 s = 0; s < m_NumShaders; ++s)
+        for (Uint32 s = 0; s < NumShaders; ++s)
         {
             const auto ShaderType = pPRS->GetActiveShaderStageType(s);
             const auto ShaderInd  = GetShaderTypePipelineIndex(ShaderType, pPRS->GetPipelineType());
-
-            m_ShaderVarIndex[ShaderInd] = static_cast<Int8>(s);
+            const auto MgrInd     = m_ActiveShaderStageIndex[ShaderInd];
+            VERIFY_EXPR(MgrInd >= 0 && MgrInd < static_cast<int>(NumShaders));
 
             // Create shader variable manager in place
             // Initialize vars manager to reference mutable and dynamic variables
             // Note that the cache has space for all variable types
             const SHADER_RESOURCE_VARIABLE_TYPE VarTypes[] = {SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE, SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC};
-            m_ResourceLayouts[s].Initialize(*pPRS, VarTypes, _countof(VarTypes), ShaderType);
+            m_pShaderVarMgrs[MgrInd].Initialize(*pPRS, VarTypes, _countof(VarTypes), ShaderType);
         }
     }
     catch (...)
@@ -97,101 +94,39 @@ void ShaderResourceBindingGLImpl::Destruct()
 {
     auto& RawAllocator = GetRawAllocator();
 
-    if (m_ResourceLayouts != nullptr)
+    if (m_pShaderVarMgrs != nullptr)
     {
-        for (Uint32 s = 0; s < m_NumShaders; ++s)
-            m_ResourceLayouts[s].~GLPipelineResourceLayout();
+        const auto NumShaders = GetNumShaders();
+        for (Uint32 s = 0; s < NumShaders; ++s)
+            m_pShaderVarMgrs[s].~ShaderVariableGL();
 
-        RawAllocator.Free(m_ResourceLayouts);
-        m_ResourceLayouts = nullptr;
+        RawAllocator.Free(m_pShaderVarMgrs);
+        m_pShaderVarMgrs = nullptr;
     }
 
-    m_ResourceCache.Destroy(RawAllocator);
+    m_ShaderResourceCache.Destroy(RawAllocator);
 }
 
 IMPLEMENT_QUERY_INTERFACE(ShaderResourceBindingGLImpl, IID_ShaderResourceBindingGL, TBase)
 
 void ShaderResourceBindingGLImpl::BindResources(Uint32 ShaderFlags, IResourceMapping* pResMapping, Uint32 Flags)
 {
-    const auto PipelineType = GetPipelineType();
-    for (Uint32 ShaderInd = 0; ShaderInd < m_ShaderVarIndex.size(); ++ShaderInd)
-    {
-        const auto VarMngrInd = m_ShaderVarIndex[ShaderInd];
-        if (VarMngrInd >= 0)
-        {
-            // ShaderInd is the shader type pipeline index here
-            const auto ShaderType = GetShaderTypeFromPipelineIndex(ShaderInd, PipelineType);
-            if (ShaderFlags & ShaderType)
-            {
-                m_ResourceLayouts[VarMngrInd].BindResources(pResMapping, Flags);
-            }
-        }
-    }
+    BindResourcesImpl(ShaderFlags, pResMapping, Flags, m_pShaderVarMgrs);
+}
+
+IShaderResourceVariable* ShaderResourceBindingGLImpl::GetVariableByName(SHADER_TYPE ShaderType, const char* Name)
+{
+    return GetVariableByNameImpl(ShaderType, Name, m_pShaderVarMgrs);
 }
 
 Uint32 ShaderResourceBindingGLImpl::GetVariableCount(SHADER_TYPE ShaderType) const
 {
-    const auto VarMngrInd = GetVariableCountHelper(ShaderType, m_ShaderVarIndex);
-    if (VarMngrInd < 0)
-        return 0;
-
-    auto& ResourceLayout = m_ResourceLayouts[VarMngrInd];
-    return ResourceLayout.GetVariableCount();
-}
-
-IShaderResourceVariable* ShaderResourceBindingGLImpl::GetVariableByName(SHADER_TYPE ShaderType, const Char* Name)
-{
-    const auto VarMngrInd = GetVariableByNameHelper(ShaderType, Name, m_ShaderVarIndex);
-    if (VarMngrInd < 0)
-        return nullptr;
-
-    auto& ResourceLayout = m_ResourceLayouts[VarMngrInd];
-    return ResourceLayout.GetVariable(Name);
+    return GetVariableCountImpl(ShaderType, m_pShaderVarMgrs);
 }
 
 IShaderResourceVariable* ShaderResourceBindingGLImpl::GetVariableByIndex(SHADER_TYPE ShaderType, Uint32 Index)
 {
-    const auto VarMngrInd = GetVariableByIndexHelper(ShaderType, Index, m_ShaderVarIndex);
-    if (VarMngrInd < 0)
-        return nullptr;
-
-    const auto& ResourceLayout = m_ResourceLayouts[VarMngrInd];
-    return ResourceLayout.GetVariable(Index);
-}
-
-void ShaderResourceBindingGLImpl::InitializeStaticResources(const IPipelineState* pPipelineState)
-{
-    if (m_bStaticResourcesInitialized)
-    {
-        LOG_WARNING_MESSAGE("Static resources have already been initialized in this shader resource binding object. The operation will be ignored.");
-        return;
-    }
-
-    if (pPipelineState == nullptr)
-    {
-        InitializeStaticResourcesWithSignature(nullptr);
-    }
-    else
-    {
-        auto* pSign = pPipelineState->GetResourceSignature(GetBindingIndex());
-        if (pSign == nullptr)
-        {
-            LOG_ERROR_MESSAGE("Shader resource binding is not compatible with pipeline state.");
-            return;
-        }
-
-        InitializeStaticResourcesWithSignature(pSign);
-    }
-}
-
-void ShaderResourceBindingGLImpl::InitializeStaticResourcesWithSignature(const IPipelineResourceSignature* pResourceSignature)
-{
-    if (pResourceSignature == nullptr)
-        pResourceSignature = GetPipelineResourceSignature();
-
-    auto* pPRSGL = ValidatedCast<const PipelineResourceSignatureGLImpl>(pResourceSignature);
-    pPRSGL->InitializeStaticSRBResources(m_ResourceCache);
-    m_bStaticResourcesInitialized = true;
+    return GetVariableByIndexImpl(ShaderType, Index, m_pShaderVarMgrs);
 }
 
 } // namespace Diligent

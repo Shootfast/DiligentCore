@@ -26,12 +26,12 @@
  */
 
 #include "pch.h"
-#include "GLProgramResourceCache.hpp"
+#include "ShaderResourceCacheGL.hpp"
 
 namespace Diligent
 {
 
-size_t GLProgramResourceCache::GetRequriedMemorySize(Uint32 UBCount, Uint32 TextureCount, Uint32 ImageCount, Uint32 SSBOCount)
+size_t ShaderResourceCacheGL::GetRequriedMemorySize(Uint32 UBCount, Uint32 TextureCount, Uint32 ImageCount, Uint32 SSBOCount)
 {
     // clang-format off
     auto MemSize = 
@@ -43,7 +43,7 @@ size_t GLProgramResourceCache::GetRequriedMemorySize(Uint32 UBCount, Uint32 Text
     return MemSize;
 }
 
-void GLProgramResourceCache::Initialize(Uint32 UBCount, Uint32 TextureCount, Uint32 ImageCount, Uint32 SSBOCount, IMemoryAllocator& MemAllocator)
+void ShaderResourceCacheGL::Initialize(Uint32 UBCount, Uint32 TextureCount, Uint32 ImageCount, Uint32 SSBOCount, IMemoryAllocator& MemAllocator)
 {
     // clang-format off
     m_TexturesOffset  = static_cast<Uint16>(m_UBsOffset      + sizeof(CachedUB)           * UBCount);
@@ -85,12 +85,12 @@ void GLProgramResourceCache::Initialize(Uint32 UBCount, Uint32 TextureCount, Uin
         new (&GetSSBO(s)) CachedSSBO;
 }
 
-GLProgramResourceCache::~GLProgramResourceCache()
+ShaderResourceCacheGL::~ShaderResourceCacheGL()
 {
-    VERIFY(!IsInitialized(), "Shader resource cache memory must be released with GLProgramResourceCache::Destroy()");
+    VERIFY(!IsInitialized(), "Shader resource cache memory must be released with ShaderResourceCacheGL::Destroy()");
 }
 
-void GLProgramResourceCache::Destroy(IMemoryAllocator& MemAllocator)
+void ShaderResourceCacheGL::Destroy(IMemoryAllocator& MemAllocator)
 {
     if (!IsInitialized())
         return;
