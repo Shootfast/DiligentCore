@@ -1454,7 +1454,7 @@ TEST_F(PipelineResourceSignatureTest, StructuredBuffers)
     TestFormattedOrStructuredBuffer(BUFFER_MODE_STRUCTURED);
 }
 
-TEST_F(PipelineResourceSignatureTest, VulkanDescriptorIndexing)
+static void TestVulkanDescriptorIndexing(bool IsGLSL, IShaderSourceInputStreamFactory* pShaderSourceFactory)
 {
     auto* pEnv    = TestingEnvironment::GetInstance();
     auto* pDevice = pEnv->GetDevice();
@@ -1486,14 +1486,15 @@ TEST_F(PipelineResourceSignatureTest, VulkanDescriptorIndexing)
     {
         const PipelineResourceDesc Resources[] =
             {
-                {SHADER_TYPE_COMPUTE, "g_Textures", TexArraySize, SHADER_RESOURCE_TYPE_TEXTURE_SRV, SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE, PIPELINE_RESOURCE_FLAG_COMBINED_SAMPLER},
+                {SHADER_TYPE_COMPUTE, "g_Textures", TexArraySize, SHADER_RESOURCE_TYPE_TEXTURE_SRV, SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE},
+                {SHADER_TYPE_COMPUTE, "g_Sampler", 1, SHADER_RESOURCE_TYPE_SAMPLER, SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE},
                 {SHADER_TYPE_COMPUTE, "g_OutImage", 1, SHADER_RESOURCE_TYPE_TEXTURE_UAV, SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE} //
             };
 
         SamplerDesc SamLinearWrapDesc{
             FILTER_TYPE_LINEAR, FILTER_TYPE_LINEAR, FILTER_TYPE_LINEAR,
             TEXTURE_ADDRESS_WRAP, TEXTURE_ADDRESS_WRAP, TEXTURE_ADDRESS_WRAP};
-        ImmutableSamplerDesc ImmutableSamplers[] = {{SHADER_TYPE_PIXEL, "g_Textures", SamLinearWrapDesc}};
+        ImmutableSamplerDesc ImmutableSamplers[] = {{SHADER_TYPE_COMPUTE, "g_Sampler", SamLinearWrapDesc}};
 
         PipelineResourceSignatureCreateInfo PRSCI;
         PRSCI.Desc.Resources            = Resources;
@@ -1516,7 +1517,8 @@ TEST_F(PipelineResourceSignatureTest, VulkanDescriptorIndexing)
     ShaderMacroHelper Macros;
 
     Macros.AddShaderMacro("NUM_TEXTURES", TexArraySize);
-    Macros.AddShaderMacro("float4", "vec4");
+    if (IsGLSL)
+        Macros.AddShaderMacro("float4", "vec4");
     for (Uint32 i = 0; i < TexArraySize; ++i)
         Macros.AddShaderMacro((String{"Tex2D_Ref"} + std::to_string(i)).c_str(), RefTextures.GetColor(i));
 
@@ -1524,13 +1526,22 @@ TEST_F(PipelineResourceSignatureTest, VulkanDescriptorIndexing)
     {
         ShaderCreateInfo ShaderCI;
         ShaderCI.pShaderSourceStreamFactory = pShaderSourceFactory;
-        ShaderCI.SourceLanguage             = SHADER_SOURCE_LANGUAGE_GLSL_VERBATIM;
         ShaderCI.UseCombinedTextureSamplers = true;
         ShaderCI.Desc.ShaderType            = SHADER_TYPE_COMPUTE;
         ShaderCI.EntryPoint                 = "main";
         ShaderCI.Desc.Name                  = "DescrIndexingTest - CS";
-        ShaderCI.FilePath                   = "VulkanDescriptorIndexing.glsl";
         ShaderCI.Macros                     = Macros;
+
+        if (IsGLSL)
+        {
+            ShaderCI.SourceLanguage = SHADER_SOURCE_LANGUAGE_GLSL_VERBATIM;
+            ShaderCI.FilePath       = "VulkanDescriptorIndexing.glsl";
+        }
+        else
+        {
+            ShaderCI.SourceLanguage = SHADER_SOURCE_LANGUAGE_HLSL;
+            ShaderCI.FilePath       = "VulkanDescriptorIndexing.hlsl";
+        }
         pDevice->CreateShader(ShaderCI, &pCS);
         ASSERT_NE(pCS, nullptr);
     }
@@ -1553,11 +1564,6 @@ TEST_F(PipelineResourceSignatureTest, VulkanDescriptorIndexing)
     pSignature->CreateShaderResourceBinding(&pSRB, true);
     ASSERT_NE(pSRB, nullptr);
 
-    RefCntAutoPtr<ISampler> pSampler;
-    pDevice->CreateSampler(SamplerDesc{}, &pSampler);
-    for (Uint32 i = 0; i < TexArraySize; ++i)
-        RefTextures.GetView(i)->SetSampler(pSampler);
-
     RefCntAutoPtr<ITestingSwapChain> pTestingSwapChain{pSwapChain, IID_TestingSwapChain};
     ASSERT_TRUE(pTestingSwapChain);
     pSRB->GetVariableByName(SHADER_TYPE_COMPUTE, "g_OutImage")->Set(pTestingSwapChain->GetCurrentBackBufferUAV());
@@ -1571,6 +1577,16 @@ TEST_F(PipelineResourceSignatureTest, VulkanDescriptorIndexing)
     pContext->DispatchCompute(DispatchAttribs);
 
     pSwapChain->Present();
+}
+
+TEST_F(PipelineResourceSignatureTest, VulkanDescriptorIndexing_GLSL)
+{
+    TestVulkanDescriptorIndexing(true, pShaderSourceFactory);
+}
+
+TEST_F(PipelineResourceSignatureTest, VulkanDescriptorIndexing_HLSL)
+{
+    TestVulkanDescriptorIndexing(false, pShaderSourceFactory);
 }
 
 } // namespace Diligent
