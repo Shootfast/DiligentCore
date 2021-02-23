@@ -332,6 +332,11 @@ TEST_F(PipelineResourceSignatureTest, MultiSignatures)
     auto* const pDevice  = pEnv->GetDevice();
     auto*       pContext = pEnv->GetDeviceContext();
 
+    if (pDevice->GetDeviceCaps().IsGLDevice())
+    {
+        GTEST_SKIP();
+    }
+
     TestingEnvironment::ScopedReset EnvironmentAutoReset;
 
     auto* pSwapChain = pEnv->GetSwapChain();
@@ -447,6 +452,11 @@ TEST_F(PipelineResourceSignatureTest, SingleVarType)
     auto* const pDevice  = pEnv->GetDevice();
     auto*       pContext = pEnv->GetDeviceContext();
 
+    if (pDevice->GetDeviceCaps().IsGLDevice())
+    {
+        GTEST_SKIP();
+    }
+
     TestingEnvironment::ScopedReset EnvironmentAutoReset;
 
     auto* pSwapChain = pEnv->GetSwapChain();
@@ -560,6 +570,11 @@ TEST_F(PipelineResourceSignatureTest, ImmutableSamplers)
     auto* const pDevice  = pEnv->GetDevice();
     auto*       pContext = pEnv->GetDeviceContext();
 
+    if (pDevice->GetDeviceCaps().IsGLDevice())
+    {
+        GTEST_SKIP();
+    }
+
     TestingEnvironment::ScopedReset EnvironmentAutoReset;
 
     auto* pSwapChain = pEnv->GetSwapChain();
@@ -651,7 +666,7 @@ TEST_F(PipelineResourceSignatureTest, ImmutableSamplers2)
 
     if (pDevice->GetDeviceCaps().IsGLDevice())
     {
-        GTEST_SKIP() << "Not supported in OpenGL";
+        GTEST_SKIP();
     }
 
     TestingEnvironment::ScopedReset EnvironmentAutoReset;

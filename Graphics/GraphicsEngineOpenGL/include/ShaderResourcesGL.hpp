@@ -27,12 +27,12 @@
 
 #pragma once
 
-// GLProgramResources class allocates single continuous chunk of memory to store all program resources, as follows:
+// ShaderResourcesGL class allocates single continuous chunk of memory to store all program resources, as follows:
 //
 //
-//       m_UniformBuffers        m_Samplers                 m_Images                   m_StorageBlocks
+//       m_UniformBuffers        m_Textures                 m_Images                   m_StorageBlocks
 //        |                       |                          |                          |                         |                  |
-//        |  UB[0]  ... UB[Nu-1]  |  Sam[0]  ...  Sam[Ns-1]  |  Img[0]  ...  Img[Ni-1]  |  SB[0]  ...  SB[Nsb-1]  |  Resource Names  |
+//        |  UB[0]  ... UB[Nu-1]  |  Tex[0]  ...  Tex[Ns-1]  |  Img[0]  ...  Img[Ni-1]  |  SB[0]  ...  SB[Nsb-1]  |  Resource Names  |
 //
 //  Nu  - number of uniform buffers
 //  Ns  - number of samplers
@@ -49,27 +49,23 @@
 namespace Diligent
 {
 
-class GLProgramResources
+class ShaderResourcesGL
 {
 public:
-    GLProgramResources() {}
-    ~GLProgramResources();
+    ShaderResourcesGL() {}
+    ~ShaderResourcesGL();
     // clang-format off
-    GLProgramResources             (GLProgramResources&& Program)noexcept;
+    ShaderResourcesGL             (ShaderResourcesGL&& Program)noexcept;
 
-    GLProgramResources             (const GLProgramResources&)  = delete;
-    GLProgramResources& operator = (const GLProgramResources&)  = delete;
-    GLProgramResources& operator = (      GLProgramResources&&) = delete;
+    ShaderResourcesGL             (const ShaderResourcesGL&)  = delete;
+    ShaderResourcesGL& operator = (const ShaderResourcesGL&)  = delete;
+    ShaderResourcesGL& operator = (      ShaderResourcesGL&&) = delete;
     // clang-format on
 
     /// Loads program uniforms and assigns bindings
     void LoadUniforms(SHADER_TYPE                           ShaderStages,
                       const GLObjectWrappers::GLProgramObj& GLProgram,
-                      class GLContextState&                 State,
-                      Uint32&                               UniformBufferBinding,
-                      Uint32&                               SamplerBinding,
-                      Uint32&                               ImageBinding,
-                      Uint32&                               StorageBufferBinding);
+                      class GLContextState&                 State);
 
     struct GLResourceAttribs
     {
@@ -155,38 +151,38 @@ public:
     static_assert((sizeof(UniformBufferInfo) % sizeof(void*)) == 0, "sizeof(UniformBufferInfo) must be multiple of sizeof(void*)");
 
 
-    struct SamplerInfo final : GLResourceAttribs
+    struct TextureInfo final : GLResourceAttribs
     {
         // clang-format off
-        SamplerInfo            (const SamplerInfo&)  = delete;
-        SamplerInfo& operator= (const SamplerInfo&)  = delete;
-        SamplerInfo            (      SamplerInfo&&) = default;
-        SamplerInfo& operator= (      SamplerInfo&&) = delete;
+        TextureInfo            (const TextureInfo&)  = delete;
+        TextureInfo& operator= (const TextureInfo&)  = delete;
+        TextureInfo            (      TextureInfo&&) = default;
+        TextureInfo& operator= (      TextureInfo&&) = delete;
 
-        SamplerInfo(const Char*             _Name, 
+        TextureInfo(const Char*             _Name, 
                     SHADER_TYPE             _ShaderStages,
                     SHADER_RESOURCE_TYPE    _ResourceType,
                     Uint32                  _Binding,
                     Uint32                  _ArraySize,
                     GLint                   _Location,
-                    GLenum                  _SamplerType)noexcept :
+                    GLenum                  _TextureType)noexcept :
             GLResourceAttribs{_Name, _ShaderStages, _ResourceType, _Binding, _ArraySize},
             Location         {_Location   },
-            SamplerType      {_SamplerType}
+            TextureType      {_TextureType}
         {}
 
-        SamplerInfo(const SamplerInfo& Sam,
+        TextureInfo(const TextureInfo& Sam,
                     StringPool&        NamesPool)noexcept :
             GLResourceAttribs{Sam, NamesPool},
             Location         {Sam.Location   },
-            SamplerType      {Sam.SamplerType}
+            TextureType      {Sam.TextureType}
         {}
         // clang-format on
 
         const GLint  Location;
-        const GLenum SamplerType;
+        const GLenum TextureType;
     };
-    static_assert((sizeof(SamplerInfo) % sizeof(void*)) == 0, "sizeof(SamplerInfo) must be multiple of sizeof(void*)");
+    static_assert((sizeof(TextureInfo) % sizeof(void*)) == 0, "sizeof(TextureInfo) must be multiple of sizeof(void*)");
 
 
     struct ImageInfo final : GLResourceAttribs
@@ -255,7 +251,7 @@ public:
 
     // clang-format off
     Uint32 GetNumUniformBuffers()const { return m_NumUniformBuffers; }
-    Uint32 GetNumSamplers()      const { return m_NumSamplers;       }
+    Uint32 GetNumTextures()      const { return m_NumTextures;       }
     Uint32 GetNumImages()        const { return m_NumImages;         }
     Uint32 GetNumStorageBlocks() const { return m_NumStorageBlocks;  }
     // clang-format on
@@ -266,10 +262,10 @@ public:
         return m_UniformBuffers[Index];
     }
 
-    SamplerInfo& GetSampler(Uint32 Index)
+    TextureInfo& GetTexture(Uint32 Index)
     {
-        VERIFY(Index < m_NumSamplers, "Sampler index (", Index, ") is out of range");
-        return m_Samplers[Index];
+        VERIFY(Index < m_NumTextures, "Texture index (", Index, ") is out of range");
+        return m_Textures[Index];
     }
 
     ImageInfo& GetImage(Uint32 Index)
@@ -291,10 +287,10 @@ public:
         return m_UniformBuffers[Index];
     }
 
-    const SamplerInfo& GetSampler(Uint32 Index) const
+    const TextureInfo& GetTexture(Uint32 Index) const
     {
-        VERIFY(Index < m_NumSamplers, "Sampler index (", Index, ") is out of range");
-        return m_Samplers[Index];
+        VERIFY(Index < m_NumTextures, "Texture index (", Index, ") is out of range");
+        return m_Textures[Index];
     }
 
     const ImageInfo& GetImage(Uint32 Index) const
@@ -311,22 +307,19 @@ public:
 
     Uint32 GetVariableCount() const
     {
-        return m_NumUniformBuffers + m_NumSamplers + m_NumImages + m_NumStorageBlocks;
+        return m_NumUniformBuffers + m_NumTextures + m_NumImages + m_NumStorageBlocks;
     }
 
     ShaderResourceDesc GetResourceDesc(Uint32 Index) const;
 
-    //bool   IsCompatibleWith(const GLProgramResources& Res) const;
-    //size_t GetHash() const;
-
     SHADER_TYPE GetShaderStages() const { return m_ShaderStages; }
 
     template <typename THandleUB,
-              typename THandleSampler,
+              typename THandleTexture,
               typename THandleImg,
               typename THandleSB>
     void ProcessConstResources(THandleUB                            HandleUB,
-                               THandleSampler                       HandleSampler,
+                               THandleTexture                       HandleTexture,
                                THandleImg                           HandleImg,
                                THandleSB                            HandleSB,
                                const PipelineResourceLayoutDesc*    pResourceLayout = nullptr,
@@ -353,11 +346,11 @@ public:
                 HandleUB(UB);
         }
 
-        for (Uint32 s = 0; s < m_NumSamplers; ++s)
+        for (Uint32 s = 0; s < m_NumTextures; ++s)
         {
-            const auto& Sam = GetSampler(s);
+            const auto& Sam = GetTexture(s);
             if (CheckResourceType(Sam.Name))
-                HandleSampler(Sam);
+                HandleTexture(Sam);
         }
 
         for (Uint32 img = 0; img < m_NumImages; ++img)
@@ -376,19 +369,19 @@ public:
     }
 
     template <typename THandleUB,
-              typename THandleSampler,
+              typename THandleTexture,
               typename THandleImg,
               typename THandleSB>
     void ProcessResources(THandleUB      HandleUB,
-                          THandleSampler HandleSampler,
+                          THandleTexture HandleTexture,
                           THandleImg     HandleImg,
                           THandleSB      HandleSB)
     {
         for (Uint32 ub = 0; ub < m_NumUniformBuffers; ++ub)
             HandleUB(GetUniformBuffer(ub));
 
-        for (Uint32 s = 0; s < m_NumSamplers; ++s)
-            HandleSampler(GetSampler(s));
+        for (Uint32 s = 0; s < m_NumTextures; ++s)
+            HandleTexture(GetTexture(s));
 
         for (Uint32 img = 0; img < m_NumImages; ++img)
             HandleImg(GetImage(img));
@@ -399,7 +392,7 @@ public:
 
 private:
     void AllocateResources(std::vector<UniformBufferInfo>& UniformBlocks,
-                           std::vector<SamplerInfo>&       Samplers,
+                           std::vector<TextureInfo>&       Textures,
                            std::vector<ImageInfo>&         Images,
                            std::vector<StorageBlockInfo>&  StorageBlocks);
 
@@ -409,20 +402,20 @@ private:
 
     // Memory layout:
     // 
-    //  |  Uniform buffers  |   Samplers  |   Images   |   Storage Blocks   |    String Pool Data   |
+    //  |  Uniform buffers  |   Textures  |   Images   |   Storage Blocks   |    String Pool Data   |
     //
 
     UniformBufferInfo*  m_UniformBuffers = nullptr;
-    SamplerInfo*        m_Samplers       = nullptr;
+    TextureInfo*        m_Textures       = nullptr;
     ImageInfo*          m_Images         = nullptr;
     StorageBlockInfo*   m_StorageBlocks  = nullptr;
 
     Uint32              m_NumUniformBuffers = 0;
-    Uint32              m_NumSamplers       = 0;
+    Uint32              m_NumTextures       = 0;
     Uint32              m_NumImages         = 0;
     Uint32              m_NumStorageBlocks  = 0;
     // clang-format on
-    // When adding new member DO NOT FORGET TO UPDATE GLProgramResources( GLProgramResources&& ProgramResources )!!!
+    // When adding new member DO NOT FORGET TO UPDATE ShaderResourcesGL( ShaderResourcesGL&& ProgramResources )!!!
 };
 
 } // namespace Diligent

@@ -99,7 +99,7 @@ PipelineResourceSignatureGLImpl::PipelineResourceSignatureGLImpl(IReferenceCount
         VERIFY_EXPR(Ptr == m_pResourceAttribs);
         (void)Ptr;
 
-        CopyDescription(MemPool, Desc);
+        CopyDescription(MemPool, Desc, pDeviceGL->GetDeviceCaps().Features.SeparablePrograms ? SHADER_TYPE_UNKNOWN : GetActiveShaderStages());
 
         if (NumStaticResStages > 0)
         {
@@ -394,8 +394,31 @@ void PipelineResourceSignatureGLImpl::ApplyBindings(GLObjectWrappers::GLProgramO
 
                 for (Uint32 ArrInd = 0; ArrInd < ResDesc.ArraySize; ++ArrInd)
                 {
-                    glUniform1i(UniformLocation + ArrInd, GetFirstImageBinding() + ResAttr.CacheOffset + ArrInd);
-                    CHECK_GL_ERROR("Failed to set binding point for image uniform '", ResDesc.Name, '\'');
+                    // glUniform1i for image uniforms is not supported in at least GLES3.2.
+                    // glProgramUniform1i is not available in GLES3.0
+                    const Uint32 Binding = GetFirstImageBinding() + ResAttr.CacheOffset + ArrInd;
+                    glUniform1i(UniformLocation + ArrInd, Binding);
+                    if (glGetError() != GL_NO_ERROR)
+                    {
+                        if (ResDesc.ArraySize > 1)
+                        {
+                            LOG_WARNING_MESSAGE("Failed to set binding for image uniform '", ResDesc.Name, "'[", ArrInd,
+                                                "]. Expected binding: ", Binding,
+                                                ". Make sure that this binding is explicitly assigned in shader source code."
+                                                " Note that if the source code is converted from HLSL and if images are only used"
+                                                " by a single shader stage, then bindings automatically assigned by HLSL->GLSL"
+                                                " converter will work fine.");
+                        }
+                        else
+                        {
+                            LOG_WARNING_MESSAGE("Failed to set binding for image uniform '", ResDesc.Name,
+                                                "'. Expected binding: ", Binding,
+                                                ". Make sure that this binding is explicitly assigned in shader source code."
+                                                " Note that if the source code is converted from HLSL and if images are only used"
+                                                " by a single shader stage, then bindings automatically assigned by HLSL->GLSL"
+                                                " converter will work fine.");
+                        }
+                    }
                 }
                 break;
             }
@@ -647,6 +670,81 @@ void PipelineResourceSignatureGLImpl::DvpCheckIntersections(Uint32 PrevBindings[
         PrevBindings[r] = std::max(PrevBindings[r], m_FirstBinding[r] + m_BindingCount[r]);
     }
 }
-#endif
+
+bool PipelineResourceSignatureGLImpl::DvpValidateCommittedResource(const ShaderResourcesGL::GLResourceAttribs& GLAttribs,
+                                                                   Uint32                                      ResIndex,
+                                                                   const ShaderResourceCacheGL&                ResourceCache,
+                                                                   const char*                                 ShaderName,
+                                                                   const char*                                 PSOName) const
+{
+    VERIFY_EXPR(ResIndex < m_Desc.NumResources);
+    const auto& ResDesc = m_Desc.Resources[ResIndex];
+    const auto& ResAttr = m_pResourceAttribs[ResIndex];
+    VERIFY(strcmp(ResDesc.Name, GLAttribs.Name) == 0, "Inconsistent resource names");
+
+    if (ResDesc.ResourceType == SHADER_RESOURCE_TYPE_SAMPLER)
+        return true; // Skip separate samplers
+
+    VERIFY_EXPR(GLAttribs.ArraySize <= ResDesc.ArraySize);
+
+    bool BindingsOK = true;
+
+    static_assert(SHADER_RESOURCE_RANGE_LAST == SHADER_RESOURCE_RANGE_SAMPLER, "Please update the switch below to handle the new shader resource range");
+    switch (PipelineResourceToShaderResourceRange(ResDesc))
+    {
+        case SHADER_RESOURCE_RANGE_CONSTANT_BUFFER:
+            for (Uint32 ArrInd = 0; ArrInd < ResDesc.ArraySize; ++ArrInd)
+            {
+                if (!ResourceCache.IsUBBound(ResAttr.CacheOffset + ArrInd))
+                {
+                    LOG_ERROR_MESSAGE("No resource is bound to variable '", GetShaderResourcePrintName(GLAttribs, ArrInd),
+                                      "' in shader '", ShaderName, "' of PSO '", PSOName, "'");
+                    BindingsOK = false;
+                    continue;
+                }
+            }
+            break;
+        case SHADER_RESOURCE_RANGE_BUFFER_UAV:
+            for (Uint32 ArrInd = 0; ArrInd < ResDesc.ArraySize; ++ArrInd)
+            {
+                if (!ResourceCache.IsSSBOBound(ResAttr.CacheOffset + ArrInd))
+                {
+                    LOG_ERROR_MESSAGE("No resource is bound to variable '", GetShaderResourcePrintName(GLAttribs, ArrInd),
+                                      "' in shader '", ShaderName, "' of PSO '", PSOName, "'");
+                    BindingsOK = false;
+                    continue;
+                }
+            }
+            break;
+        case SHADER_RESOURCE_RANGE_TEXTURE_SRV:
+            for (Uint32 ArrInd = 0; ArrInd < ResDesc.ArraySize; ++ArrInd)
+            {
+                if (!ResourceCache.IsTextureBound(ResAttr.CacheOffset + ArrInd, ResDesc.ResourceType == SHADER_RESOURCE_TYPE_TEXTURE_SRV))
+                {
+                    LOG_ERROR_MESSAGE("No resource is bound to variable '", GetShaderResourcePrintName(GLAttribs, ArrInd),
+                                      "' in shader '", ShaderName, "' of PSO '", PSOName, "'");
+                    BindingsOK = false;
+                    continue;
+                }
+            }
+            break;
+        case SHADER_RESOURCE_RANGE_TEXTURE_UAV:
+            for (Uint32 ArrInd = 0; ArrInd < ResDesc.ArraySize; ++ArrInd)
+            {
+                if (!ResourceCache.IsImageBound(ResAttr.CacheOffset + ArrInd, ResDesc.ResourceType == SHADER_RESOURCE_TYPE_TEXTURE_UAV))
+                {
+                    LOG_ERROR_MESSAGE("No resource is bound to variable '", GetShaderResourcePrintName(GLAttribs, ArrInd),
+                                      "' in shader '", ShaderName, "' of PSO '", PSOName, "'");
+                    BindingsOK = false;
+                    continue;
+                }
+            }
+            break;
+        default:
+            UNEXPECTED("Unsupported shader resource range type.");
+    }
+    return BindingsOK;
+}
+#endif // DILIGENT_DEVELOPMENT
 
 } // namespace Diligent

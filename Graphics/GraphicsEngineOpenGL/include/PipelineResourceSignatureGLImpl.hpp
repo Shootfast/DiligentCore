@@ -34,6 +34,7 @@
 
 #include "PipelineResourceSignatureBase.hpp"
 #include "ShaderResourceCacheGL.hpp"
+#include "ShaderResourcesGL.hpp"
 
 namespace Diligent
 {
@@ -147,7 +148,15 @@ public:
     void InitSRBResourceCache(ShaderResourceCacheGL& ResourceCache) const;
 
 #ifdef DILIGENT_DEVELOPMENT
+    /// Find intersections between resource binding ranges.
     void DvpCheckIntersections(Uint32 PrevBindings[SHADER_RESOURCE_RANGE_LAST + 1]) const;
+
+    /// Verifies committed resource attribs using the SPIRV resource attributes from the PSO.
+    bool DvpValidateCommittedResource(const ShaderResourcesGL::GLResourceAttribs& GLAttribs,
+                                      Uint32                                      ResIndex,
+                                      const ShaderResourceCacheGL&                ResourceCache,
+                                      const char*                                 ShaderName,
+                                      const char*                                 PSOName) const;
 #endif
 
 private:

@@ -1736,6 +1736,6 @@ bool PipelineResourceSignatureVkImpl::DvpValidateCommittedResource(const SPIRVSh
 
     return BindingsOK;
 }
-#endif
+#endif // DILIGENT_DEVELOPMENT
 
 } // namespace Diligent

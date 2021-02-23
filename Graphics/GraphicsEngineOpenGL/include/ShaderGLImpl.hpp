@@ -33,7 +33,7 @@
 #include "RenderDevice.h"
 #include "GLObjectWrapper.hpp"
 #include "RenderDeviceGLImpl.hpp"
-#include "GLProgramResources.hpp"
+#include "ShaderResourcesGL.hpp"
 
 namespace Diligent
 {
@@ -94,18 +94,18 @@ public:
 
     struct ShaderStageInfo
     {
-        ShaderStageInfo(ShaderGLImpl* _pShader);
+        ShaderStageInfo(const ShaderGLImpl* _pShader);
 
-        SHADER_TYPE   Type    = SHADER_TYPE_UNKNOWN;
-        ShaderGLImpl* pShader = nullptr;
+        SHADER_TYPE         Type    = SHADER_TYPE_UNKNOWN;
+        const ShaderGLImpl* pShader = nullptr;
     };
-    static GLObjectWrappers::GLProgramObj LinkProgram(ShaderStageInfo* pShaderStagess, Uint32 NumShaders, bool IsSeparableProgram);
+    static GLObjectWrappers::GLProgramObj LinkProgram(const ShaderStageInfo* pShaderStagess, Uint32 NumShaders, bool IsSeparableProgram);
 
-    GLProgramResources& GetShaderResources() { return m_Resources; }
+    const std::shared_ptr<const ShaderResourcesGL>& GetShaderResources() const { return m_pShaderResources; }
 
 private:
-    GLObjectWrappers::GLShaderObj m_GLShaderObj;
-    GLProgramResources            m_Resources;
+    GLObjectWrappers::GLShaderObj            m_GLShaderObj;
+    std::shared_ptr<const ShaderResourcesGL> m_pShaderResources;
 };
 
 } // namespace Diligent

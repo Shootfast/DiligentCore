@@ -33,7 +33,7 @@
 #include "ShaderResourceBindingGL.h"
 #include "RenderDeviceGL.h"
 #include "ShaderResourceBindingBase.hpp"
-#include "GLProgramResources.hpp"
+#include "ShaderResourcesGL.hpp"
 #include "ShaderResourceCacheGL.hpp"
 #include "ShaderVariableGL.hpp"
 #include "PipelineResourceSignatureGLImpl.hpp"

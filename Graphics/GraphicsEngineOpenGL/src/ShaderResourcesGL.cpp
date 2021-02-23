@@ -28,7 +28,7 @@
 #include "pch.h"
 #include <unordered_set>
 #include "GLContextState.hpp"
-#include "GLProgramResources.hpp"
+#include "ShaderResourcesGL.hpp"
 #include "RenderDeviceGLImpl.hpp"
 #include "ShaderResourceBindingBase.hpp"
 #include "ShaderResourceVariableBase.hpp"
@@ -37,26 +37,26 @@
 namespace Diligent
 {
 
-GLProgramResources::GLProgramResources(GLProgramResources&& Program) noexcept :
+ShaderResourcesGL::ShaderResourcesGL(ShaderResourcesGL&& Program) noexcept :
     // clang-format off
     m_ShaderStages     {Program.m_ShaderStages         },
     m_UniformBuffers   {Program.m_UniformBuffers       },
-    m_Samplers         {Program.m_Samplers             },
+    m_Textures         {Program.m_Textures             },
     m_Images           {Program.m_Images               },
     m_StorageBlocks    {Program.m_StorageBlocks        },
     m_NumUniformBuffers{Program.m_NumUniformBuffers    },
-    m_NumSamplers      {Program.m_NumSamplers          },
+    m_NumTextures      {Program.m_NumTextures          },
     m_NumImages        {Program.m_NumImages            },        
     m_NumStorageBlocks {Program.m_NumStorageBlocks     }
 // clang-format on
 {
     Program.m_UniformBuffers = nullptr;
-    Program.m_Samplers       = nullptr;
+    Program.m_Textures       = nullptr;
     Program.m_Images         = nullptr;
     Program.m_StorageBlocks  = nullptr;
 
     Program.m_NumUniformBuffers = 0;
-    Program.m_NumSamplers       = 0;
+    Program.m_NumTextures       = 0;
     Program.m_NumImages         = 0;
     Program.m_NumStorageBlocks  = 0;
 }
@@ -68,15 +68,15 @@ inline void RemoveArrayBrackets(char* Str)
         *OpenBacketPtr = 0;
 }
 
-void GLProgramResources::AllocateResources(std::vector<UniformBufferInfo>& UniformBlocks,
-                                           std::vector<SamplerInfo>&       Samplers,
-                                           std::vector<ImageInfo>&         Images,
-                                           std::vector<StorageBlockInfo>&  StorageBlocks)
+void ShaderResourcesGL::AllocateResources(std::vector<UniformBufferInfo>& UniformBlocks,
+                                          std::vector<TextureInfo>&       Textures,
+                                          std::vector<ImageInfo>&         Images,
+                                          std::vector<StorageBlockInfo>&  StorageBlocks)
 {
     VERIFY(m_UniformBuffers == nullptr, "Resources have already been allocated!");
 
     m_NumUniformBuffers = static_cast<Uint32>(UniformBlocks.size());
-    m_NumSamplers       = static_cast<Uint32>(Samplers.size());
+    m_NumTextures       = static_cast<Uint32>(Textures.size());
     m_NumImages         = static_cast<Uint32>(Images.size());
     m_NumStorageBlocks  = static_cast<Uint32>(StorageBlocks.size());
 
@@ -86,7 +86,7 @@ void GLProgramResources::AllocateResources(std::vector<UniformBufferInfo>& Unifo
         StringPoolDataSize += strlen(ub.Name) + 1;
     }
 
-    for (const auto& sam : Samplers)
+    for (const auto& sam : Textures)
     {
         StringPoolDataSize += strlen(sam.Name) + 1;
     }
@@ -106,7 +106,7 @@ void GLProgramResources::AllocateResources(std::vector<UniformBufferInfo>& Unifo
     // clang-format off
     size_t TotalMemorySize = 
         m_NumUniformBuffers * sizeof(UniformBufferInfo) + 
-        m_NumSamplers       * sizeof(SamplerInfo) +
+        m_NumTextures       * sizeof(TextureInfo) +
         m_NumImages         * sizeof(ImageInfo) +
         m_NumStorageBlocks  * sizeof(StorageBlockInfo);
     // clang-format on
@@ -114,12 +114,12 @@ void GLProgramResources::AllocateResources(std::vector<UniformBufferInfo>& Unifo
     if (TotalMemorySize == 0)
     {
         m_UniformBuffers = nullptr;
-        m_Samplers       = nullptr;
+        m_Textures       = nullptr;
         m_Images         = nullptr;
         m_StorageBlocks  = nullptr;
 
         m_NumUniformBuffers = 0;
-        m_NumSamplers       = 0;
+        m_NumTextures       = 0;
         m_NumImages         = 0;
         m_NumStorageBlocks  = 0;
 
@@ -129,12 +129,12 @@ void GLProgramResources::AllocateResources(std::vector<UniformBufferInfo>& Unifo
     TotalMemorySize += AlignedStringPoolDataSize * sizeof(Char);
 
     auto& MemAllocator = GetRawAllocator();
-    void* RawMemory    = ALLOCATE_RAW(MemAllocator, "Memory buffer for GLProgramResources", TotalMemorySize);
+    void* RawMemory    = ALLOCATE_RAW(MemAllocator, "Memory buffer for ShaderResourcesGL", TotalMemorySize);
 
     // clang-format off
     m_UniformBuffers = reinterpret_cast<UniformBufferInfo*>(RawMemory);
-    m_Samplers       = reinterpret_cast<SamplerInfo*>     (m_UniformBuffers + m_NumUniformBuffers);
-    m_Images         = reinterpret_cast<ImageInfo*>       (m_Samplers       + m_NumSamplers);
+    m_Textures       = reinterpret_cast<TextureInfo*>     (m_UniformBuffers + m_NumUniformBuffers);
+    m_Images         = reinterpret_cast<ImageInfo*>       (m_Textures       + m_NumTextures);
     m_StorageBlocks  = reinterpret_cast<StorageBlockInfo*>(m_Images         + m_NumImages);
     void* EndOfResourceData =                              m_StorageBlocks + m_NumStorageBlocks;
     Char* StringPoolData = reinterpret_cast<Char*>(EndOfResourceData);
@@ -150,10 +150,10 @@ void GLProgramResources::AllocateResources(std::vector<UniformBufferInfo>& Unifo
         new (m_UniformBuffers + ub) UniformBufferInfo{SrcUB, TmpStringPool};
     }
 
-    for (Uint32 s = 0; s < m_NumSamplers; ++s)
+    for (Uint32 s = 0; s < m_NumTextures; ++s)
     {
-        auto& SrcSam = Samplers[s];
-        new (m_Samplers + s) SamplerInfo{SrcSam, TmpStringPool};
+        auto& SrcSam = Textures[s];
+        new (m_Textures + s) TextureInfo{SrcSam, TmpStringPool};
     }
 
     for (Uint32 img = 0; img < m_NumImages; ++img)
@@ -171,7 +171,7 @@ void GLProgramResources::AllocateResources(std::vector<UniformBufferInfo>& Unifo
     VERIFY_EXPR(TmpStringPool.GetRemainingSize() == 0);
 }
 
-GLProgramResources::~GLProgramResources()
+ShaderResourcesGL::~ShaderResourcesGL()
 {
     // clang-format off
     ProcessResources(
@@ -179,9 +179,9 @@ GLProgramResources::~GLProgramResources()
         {
             UB.~UniformBufferInfo();
         },
-        [&](SamplerInfo& Sam)
+        [&](TextureInfo& Sam)
         {
-            Sam.~SamplerInfo();
+            Sam.~TextureInfo();
         },
         [&](ImageInfo& Img)
         {
@@ -203,17 +203,18 @@ GLProgramResources::~GLProgramResources()
 }
 
 
-void GLProgramResources::LoadUniforms(SHADER_TYPE                           ShaderStages,
-                                      const GLObjectWrappers::GLProgramObj& GLProgram,
-                                      GLContextState&                       State,
-                                      Uint32&                               UniformBufferBinding,
-                                      Uint32&                               SamplerBinding,
-                                      Uint32&                               ImageBinding,
-                                      Uint32&                               StorageBufferBinding)
+void ShaderResourcesGL::LoadUniforms(SHADER_TYPE                           ShaderStages,
+                                     const GLObjectWrappers::GLProgramObj& GLProgram,
+                                     GLContextState&                       State)
 {
+    Uint32 UniformBufferBinding = 0;
+    Uint32 TextureBinding       = 0;
+    Uint32 ImageBinding         = 0;
+    Uint32 StorageBufferBinding = 0;
+
     // Load uniforms to temporary arrays. We will then pack all variables into a single chunk of memory.
     std::vector<UniformBufferInfo> UniformBlocks;
-    std::vector<SamplerInfo>       Samplers;
+    std::vector<TextureInfo>       Textures;
     std::vector<ImageInfo>         Images;
     std::vector<StorageBlockInfo>  StorageBlocks;
     std::unordered_set<String>     NamesPool;
@@ -357,23 +358,16 @@ void GLProgramResources::LoadUniforms(SHADER_TYPE                           Shad
 
                 RemoveArrayBrackets(Name.data());
 
-                Samplers.emplace_back(
+                Textures.emplace_back(
                     NamesPool.emplace(Name.data()).first->c_str(),
                     ShaderStages,
                     ResourceType,
-                    SamplerBinding,
+                    TextureBinding,
                     static_cast<Uint32>(size),
                     UniformLocation,
                     dataType //
                 );
-
-                for (GLint arr_ind = 0; arr_ind < size; ++arr_ind)
-                {
-                    // glProgramUniform1i is not available in GLES3.0
-                    glUniform1i(UniformLocation + arr_ind, SamplerBinding++);
-                    CHECK_GL_ERROR("Failed to set binding point for sampler uniform '", Name.data(), '\'');
-                }
-
+                TextureBinding += size;
                 break;
             }
 
@@ -434,37 +428,7 @@ void GLProgramResources::LoadUniforms(SHADER_TYPE                           Shad
                     UniformLocation,
                     dataType //
                 );
-
-                for (GLint arr_ind = 0; arr_ind < size; ++arr_ind)
-                {
-                    // glUniform1i for image uniforms is not supported in at least GLES3.2.
-                    // glProgramUniform1i is not available in GLES3.0
-                    glUniform1i(UniformLocation + arr_ind, ImageBinding);
-                    if (glGetError() != GL_NO_ERROR)
-                    {
-                        if (size > 1)
-                        {
-                            LOG_WARNING_MESSAGE("Failed to set binding for image uniform '", Name.data(), "'[", arr_ind,
-                                                "]. Expected binding: ", ImageBinding,
-                                                ". Make sure that this binding is explicitly assigned in shader source code."
-                                                " Note that if the source code is converted from HLSL and if images are only used"
-                                                " by a single shader stage, then bindings automatically assigned by HLSL->GLSL"
-                                                " converter will work fine.");
-                        }
-                        else
-                        {
-                            LOG_WARNING_MESSAGE("Failed to set binding for image uniform '", Name.data(), "'."
-                                                                                                          " Expected binding: ",
-                                                ImageBinding,
-                                                ". Make sure that this binding is explicitly assigned in shader source code."
-                                                " Note that if the source code is converted from HLSL and if images are only used"
-                                                " by a single shader stage, then bindings automatically assigned by HLSL->GLSL"
-                                                " converter will work fine.");
-                        }
-                    }
-                    ++ImageBinding;
-                }
-
+                ImageBinding += size;
                 break;
             }
 #endif
@@ -533,9 +497,7 @@ void GLProgramResources::LoadUniforms(SHADER_TYPE                           Shad
                 UniformBlockIndex //
             );
         }
-
-        glUniformBlockBinding(GLProgram, UniformBlockIndex, UniformBufferBinding++);
-        CHECK_GL_ERROR("glUniformBlockBinding() failed");
+        ++UniformBufferBinding;
     }
 
 #if GL_ARB_shader_storage_buffer_object
@@ -589,53 +551,26 @@ void GLProgramResources::LoadUniforms(SHADER_TYPE                           Shad
                 SBIndex //
             );
         }
-
-        if (glShaderStorageBlockBinding)
-        {
-            glShaderStorageBlockBinding(GLProgram, SBIndex, StorageBufferBinding);
-            CHECK_GL_ERROR("glShaderStorageBlockBinding() failed");
-        }
-        else
-        {
-            const GLenum props[]                 = {GL_BUFFER_BINDING};
-            GLint        params[_countof(props)] = {};
-            glGetProgramResourceiv(GLProgram, GL_SHADER_STORAGE_BLOCK, SBIndex, _countof(props), props, _countof(params), nullptr, params);
-            CHECK_GL_ERROR("glGetProgramResourceiv() failed");
-
-            if (IsNewBlock)
-                StorageBlocks.back().Binding = static_cast<Uint32>(params[0]);
-
-            if (StorageBufferBinding != static_cast<Uint32>(params[0]))
-            {
-                LOG_WARNING_MESSAGE("glShaderStorageBlockBinding is not available on this device and "
-                                    "the engine is unable to automatically assign shader storage block bindindg for '",
-                                    Name.data(), "' variable. Expected binding: ", StorageBufferBinding, ", actual binding: ", params[0],
-                                    ". Make sure that this binding is explicitly assigned in shader source code."
-                                    " Note that if the source code is converted from HLSL and if storage blocks are only used"
-                                    " by a single shader stage, then bindings automatically assigned by HLSL->GLSL"
-                                    " converter will work fine.");
-            }
-        }
         ++StorageBufferBinding;
     }
 #endif
 
     State.SetProgram(GLObjectWrappers::GLProgramObj::Null());
 
-    AllocateResources(UniformBlocks, Samplers, Images, StorageBlocks);
+    AllocateResources(UniformBlocks, Textures, Images, StorageBlocks);
 }
 
-ShaderResourceDesc GLProgramResources::GetResourceDesc(Uint32 Index) const
+ShaderResourceDesc ShaderResourcesGL::GetResourceDesc(Uint32 Index) const
 {
     if (Index < m_NumUniformBuffers)
         return GetUniformBuffer(Index).GetResourceDesc();
     else
         Index -= m_NumUniformBuffers;
 
-    if (Index < m_NumSamplers)
-        return GetSampler(Index).GetResourceDesc();
+    if (Index < m_NumTextures)
+        return GetTexture(Index).GetResourceDesc();
     else
-        Index -= m_NumSamplers;
+        Index -= m_NumTextures;
 
     if (Index < m_NumImages)
         return GetImage(Index).GetResourceDesc();

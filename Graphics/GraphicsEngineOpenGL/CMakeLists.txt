@@ -15,7 +15,7 @@ set(INCLUDE
     include/GLObjectWrapper.hpp
     include/ShaderResourceCacheGL.hpp
     include/ShaderVariableGL.hpp
-    include/GLProgramResources.hpp
+    include/ShaderResourcesGL.hpp
     include/GLTypeConversions.hpp
     include/pch.h
     include/PipelineStateGLImpl.hpp
@@ -70,7 +70,7 @@ set(SOURCE
     src/GLObjectWrapper.cpp
     src/ShaderResourceCacheGL.cpp
     src/ShaderVariableGL.cpp
-    src/GLProgramResources.cpp
+    src/ShaderResourcesGL.cpp
     src/GLTypeConversions.cpp
     src/PipelineStateGLImpl.cpp
     src/PipelineResourceSignatureGLImpl.cpp

@@ -329,7 +329,7 @@ private:
     // Static resource cache for all static resources
     ShaderResourceCacheVk* m_pStaticResCache = nullptr;
     // Static variables manager for every shader stage
-    ShaderVariableManagerVk* m_StaticVarsMgrs = nullptr; // [m_NumShaderStages]
+    ShaderVariableManagerVk* m_StaticVarsMgrs = nullptr; // [GetNumStaticResStages()]
 
     ImmutableSamplerAttribs* m_ImmutableSamplers = nullptr; // [m_Desc.NumImmutableSamplers]
 

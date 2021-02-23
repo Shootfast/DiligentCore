@@ -822,7 +822,7 @@ void PipelineStateD3D12Impl::DvpVerifySRBResources(ShaderResourceBindingD3D12Imp
     VERIFY_EXPR(attrib_it == m_ResourceAttibutions.end());
 }
 
-#endif
+#endif // DILIGENT_DEVELOPMENT
 
 
 template <typename PSOCreateInfoType>

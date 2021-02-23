@@ -47,7 +47,8 @@ namespace Diligent
 {
 
 /// Validates pipeline resource signature description and throws an exception in case of an error.
-void ValidatePipelineResourceSignatureDesc(const PipelineResourceSignatureDesc& Desc) noexcept(false);
+void ValidatePipelineResourceSignatureDesc(const PipelineResourceSignatureDesc& Desc, bool ShaderResourceRuntimeArraySupported) noexcept(false);
+void ValidateImmutableSamplers(const PipelineResourceSignatureDesc& Desc) noexcept(false);
 
 static constexpr Uint32 InvalidImmutableSamplerIndex = ~0u;
 /// Finds an immutable sampler for the resource name 'ResourceName' that is defined in shader stages 'ShaderStages'.
@@ -94,7 +95,7 @@ public:
         this->m_Desc.ImmutableSamplers     = nullptr;
         this->m_Desc.CombinedSamplerSuffix = nullptr;
 
-        ValidatePipelineResourceSignatureDesc(Desc);
+        ValidatePipelineResourceSignatureDesc(Desc, pDevice->GetDeviceCaps().Features.ShaderResourceRuntimeArray);
 
         // Determine shader stages that have any resources as well as
         // shader stages that have static resources.
@@ -153,6 +154,11 @@ public:
     Uint32 GetNumActiveShaderStages() const
     {
         return PlatformMisc::CountOneBits(Uint32{m_ShaderStages});
+    }
+
+    SHADER_TYPE GetActiveShaderStages() const
+    {
+        return m_ShaderStages;
     }
 
     // Returns the number of shader stages that have static resources.
@@ -284,7 +290,7 @@ protected:
             Allocator.AddSpaceForString(Desc.CombinedSamplerSuffix);
     }
 
-    void CopyDescription(FixedLinearAllocator& Allocator, const PipelineResourceSignatureDesc& Desc) noexcept(false)
+    void CopyDescription(FixedLinearAllocator& Allocator, const PipelineResourceSignatureDesc& Desc, SHADER_TYPE OverrideImtblSampStages = SHADER_TYPE_UNKNOWN) noexcept(false)
     {
         PipelineResourceDesc* pResources = Allocator.ConstructArray<PipelineResourceDesc>(Desc.NumResources);
         ImmutableSamplerDesc* pSamplers  = Allocator.ConstructArray<ImmutableSamplerDesc>(Desc.NumImmutableSamplers);
@@ -328,6 +334,7 @@ protected:
             DstSam = SrcSam;
             VERIFY_EXPR(SrcSam.SamplerOrTextureName != nullptr && SrcSam.SamplerOrTextureName[0] != '\0');
             DstSam.SamplerOrTextureName = Allocator.CopyString(SrcSam.SamplerOrTextureName);
+            DstSam.ShaderStages |= OverrideImtblSampStages;
         }
 
         this->m_Desc.Resources         = pResources;
@@ -335,6 +342,11 @@ protected:
 
         if (Desc.UseCombinedTextureSamplers)
             this->m_Desc.CombinedSamplerSuffix = Allocator.CopyString(Desc.CombinedSamplerSuffix);
+
+        // Some implementations need to override immutable sampler shader stages,
+        // we need to be sure that after overriding samplers are still valid.
+        if (OverrideImtblSampStages != SHADER_TYPE_UNKNOWN)
+            ValidateImmutableSamplers(this->m_Desc);
     }
 
     void Destruct()

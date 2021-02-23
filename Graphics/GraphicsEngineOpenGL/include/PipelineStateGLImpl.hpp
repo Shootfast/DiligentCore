@@ -85,6 +85,10 @@ public:
         return m_Signatures[index].RawPtr<PipelineResourceSignatureGLImpl>();
     }
 
+#ifdef DILIGENT_DEVELOPMENT
+    void DvpVerifySRBResources(class ShaderResourceBindingGLImpl* pSRBs[], Uint32 NumSRBs) const;
+#endif
+
 private:
     using ShaderStageInfo = ShaderGLImpl::ShaderStageInfo;
     using TShaderStages   = std::vector<ShaderStageInfo>;
@@ -92,14 +96,14 @@ private:
     GLObjectWrappers::GLPipelineObj& GetGLProgramPipeline(GLContext::NativeGLContextType Context);
 
     template <typename PSOCreateInfoType>
-    void InitInternalObjects(const PSOCreateInfoType& CreateInfo, TShaderStages& Shaders);
+    void InitInternalObjects(const PSOCreateInfoType& CreateInfo, const TShaderStages& ShaderStages);
 
     void InitResourceLayouts(const PipelineStateCreateInfo& CreateInfo,
-                             TShaderStages&                 Shaders,
+                             const TShaderStages&           ShaderStages,
                              SHADER_TYPE                    ActiveStages);
 
     void CreateDefaultSignature(const PipelineStateCreateInfo& CreateInfo,
-                                TShaderStages&                 ShaderStages,
+                                const TShaderStages&           ShaderStages,
                                 SHADER_TYPE                    ActiveStages,
                                 IPipelineResourceSignature**   ppSignature);
 
@@ -108,8 +112,51 @@ private:
     SHADER_TYPE GetShaderStageType(Uint32 Index) const;
     Uint32      GetNumShaderStages() const { return m_NumPrograms; }
 
+#ifdef DILIGENT_DEVELOPMENT
+    struct ResourceAttribution
+    {
+        static constexpr Uint32 InvalidSignatureIndex = ~0u;
+        static constexpr Uint32 InvalidResourceIndex  = PipelineResourceSignatureGLImpl::InvalidResourceIndex;
+        static constexpr Uint32 InvalidSamplerIndex   = InvalidImmutableSamplerIndex;
+
+        const PipelineResourceSignatureGLImpl* pSignature = nullptr;
+
+        Uint32 SignatureIndex        = InvalidSignatureIndex;
+        Uint32 ResourceIndex         = InvalidResourceIndex;
+        Uint32 ImmutableSamplerIndex = InvalidSamplerIndex;
+
+        ResourceAttribution() noexcept {}
+        ResourceAttribution(const PipelineResourceSignatureGLImpl* _pSignature,
+                            Uint32                                 _SignatureIndex,
+                            Uint32                                 _ResourceIndex,
+                            Uint32                                 _ImmutableSamplerIndex = InvalidResourceIndex) noexcept :
+            pSignature{_pSignature},
+            SignatureIndex{_SignatureIndex},
+            ResourceIndex{_ResourceIndex},
+            ImmutableSamplerIndex{_ImmutableSamplerIndex}
+        {
+            VERIFY_EXPR(pSignature == nullptr || pSignature->GetDesc().BindingIndex == SignatureIndex);
+            VERIFY_EXPR((ResourceIndex == InvalidResourceIndex) || (ImmutableSamplerIndex == InvalidSamplerIndex));
+        }
+
+        explicit operator bool() const
+        {
+            return SignatureIndex != InvalidSignatureIndex && (ResourceIndex != InvalidResourceIndex || ImmutableSamplerIndex != InvalidSamplerIndex);
+        }
+
+        bool IsImmutableSampler() const
+        {
+            return *this && ImmutableSamplerIndex != InvalidSamplerIndex;
+        }
+    };
+    ResourceAttribution GetResourceAttribution(const char* Name, SHADER_TYPE Stage) const;
+
+    void DvpValidateShaderResources(const std::shared_ptr<const ShaderResourcesGL>& pShaderResources, const char* ShaderName, SHADER_TYPE ShaderStages);
+#endif
+
+private:
     // Linked GL programs for every shader stage. Every pipeline needs to have its own programs
-    // because resource bindings assigned by GLProgramResources::LoadUniforms depend on other
+    // because resource bindings assigned by PipelineResourceSignatureGLImpl::ApplyBindings depend on other
     // shader stages.
     using GLProgramObj         = GLObjectWrappers::GLProgramObj;
     GLProgramObj* m_GLPrograms = nullptr; // [m_NumPrograms]
@@ -125,6 +172,15 @@ private:
     Uint8                      m_NumPrograms                = 0;
     bool                       m_IsProgramPipelineSupported = false;
     std::array<SHADER_TYPE, 5> m_ShaderTypes                = {};
+
+#ifdef DILIGENT_DEVELOPMENT
+    // Shader resources for all shaders in all shader stages in the pipeline.
+    std::vector<std::shared_ptr<const ShaderResourcesGL>> m_ShaderResources;
+    std::vector<String>                                   m_ShaderNames;
+
+    // Shader resource attributions for every resource in m_ShaderResources, in the same order.
+    std::vector<ResourceAttribution> m_ResourceAttibutions;
+#endif
 };
 
 } // namespace Diligent

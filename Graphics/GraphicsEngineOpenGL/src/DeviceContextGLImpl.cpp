@@ -150,7 +150,7 @@ void DeviceContextGLImpl::SetPipelineState(IPipelineState* pPipelineState)
     }
 
     // Note that the program may change if a shader is created after the call
-    // (GLProgramResources needs to bind a program to load uniforms), but before
+    // (ShaderResourcesGL needs to bind a program to load uniforms), but before
     // the draw command.
     m_pPipelineState->CommitProgram(m_ContextState);
 }
@@ -633,6 +633,17 @@ void DeviceContextGLImpl::EndRenderPass()
     m_ContextState.InvalidateFBO();
 }
 
+#ifdef DILIGENT_DEVELOPMENT
+void DeviceContextGLImpl::DvpValidateCommittedShaderResources()
+{
+    if (m_CommittedResourcesValidated)
+        return;
+
+    m_pPipelineState->DvpVerifySRBResources(m_BindInfo.SRBs.data(), static_cast<Uint32>(m_BindInfo.SRBs.size()));
+    m_CommittedResourcesValidated = true;
+}
+#endif
+
 void DeviceContextGLImpl::BindProgramResources(MEMORY_BARRIER& NewMemoryBarriers, IShaderResourceBinding* pResBinding)
 {
     auto*       pShaderResBindingGL = ValidatedCast<ShaderResourceBindingGLImpl>(pResBinding);
@@ -859,7 +870,7 @@ void DeviceContextGLImpl::PrepareForDraw(DRAW_FLAGS Flags, bool IsIndexed, GLenu
 #endif
 
     // The program might have changed since the last SetPipelineState call if a shader was
-    // created after the call (GLProgramResources needs to bind a program to load uniforms).
+    // created after the call (ShaderResourcesGL needs to bind a program to load uniforms).
     m_pPipelineState->CommitProgram(m_ContextState);
 
     auto        CurrNativeGLContext = m_pDevice->m_GLContext.GetCurrentNativeGLContext();
@@ -898,6 +909,10 @@ void DeviceContextGLImpl::PrepareForDraw(DRAW_FLAGS Flags, bool IsIndexed, GLenu
     {
         GlTopology = PrimitiveTopologyToGLTopology(Topology);
     }
+
+#ifdef DILIGENT_DEVELOPMENT
+    DvpValidateCommittedShaderResources();
+#endif
 }
 
 void DeviceContextGLImpl::PrepareForIndexedDraw(VALUE_TYPE IndexType, Uint32 FirstIndexLocation, GLenum& GLIndexType, Uint32& FirstIndexByteOffset)
@@ -1089,9 +1104,13 @@ void DeviceContextGLImpl::DispatchCompute(const DispatchComputeAttribs& Attribs)
     if (!DvpVerifyDispatchArguments(Attribs))
         return;
 
+#ifdef DILIGENT_DEVELOPMENT
+    DvpValidateCommittedShaderResources();
+#endif
+
 #if GL_ARB_compute_shader
     // The program might have changed since the last SetPipelineState call if a shader was
-    // created after the call (GLProgramResources needs to bind a program to load uniforms).
+    // created after the call (ShaderResourcesGL needs to bind a program to load uniforms).
     m_pPipelineState->CommitProgram(m_ContextState);
     glDispatchCompute(Attribs.ThreadGroupCountX, Attribs.ThreadGroupCountY, Attribs.ThreadGroupCountZ);
     DEV_CHECK_GL_ERROR("glDispatchCompute() failed");
@@ -1107,9 +1126,13 @@ void DeviceContextGLImpl::DispatchComputeIndirect(const DispatchComputeIndirectA
     if (!DvpVerifyDispatchIndirectArguments(Attribs, pAttribsBuffer))
         return;
 
+#ifdef DILIGENT_DEVELOPMENT
+    DvpValidateCommittedShaderResources();
+#endif
+
 #if GL_ARB_compute_shader
     // The program might have changed since the last SetPipelineState call if a shader was
-    // created after the call (GLProgramResources needs to bind a program to load uniforms).
+    // created after the call (ShaderResourcesGL needs to bind a program to load uniforms).
     m_pPipelineState->CommitProgram(m_ContextState);
 
     auto* pBufferGL = ValidatedCast<BufferGLImpl>(pAttribsBuffer);

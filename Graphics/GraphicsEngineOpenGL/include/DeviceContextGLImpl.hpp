@@ -297,6 +297,10 @@ private:
     __forceinline void PrepareForIndirectDraw(IBuffer* pAttribsBuffer);
     __forceinline void PostDraw();
 
+#ifdef DILIGENT_DEVELOPMENT
+    void DvpValidateCommittedShaderResources();
+#endif
+
     void BeginSubpass();
     void EndSubpass();
 
@@ -318,6 +322,10 @@ private:
     RefCntAutoPtr<ISwapChainGL> m_pSwapChain;
 
     bool m_IsDefaultFBOBound = false;
+
+#ifdef DILIGENT_DEVELOPMENT
+    bool m_CommittedResourcesValidated = false;
+#endif
 
     GLObjectWrappers::GLFrameBufferObj m_DefaultFBO;
 
