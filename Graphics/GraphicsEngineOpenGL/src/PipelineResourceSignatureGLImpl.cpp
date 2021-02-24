@@ -264,19 +264,26 @@ void PipelineResourceSignatureGLImpl::CreateLayouts(const PipelineResourceSignat
 
 #ifdef DILIGENT_DEVELOPMENT
     GLint MaxUniformBlocks = 0;
-    GLint MaxStorageBlock  = 0;
-    GLint MaxTextureUnits  = 0;
-    GLint MaxImagesUnits   = 0;
     glGetIntegerv(GL_MAX_UNIFORM_BUFFER_BINDINGS, &MaxUniformBlocks);
-    glGetIntegerv(GL_MAX_COMBINED_SHADER_STORAGE_BLOCKS, &MaxStorageBlock);
-    glGetIntegerv(GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS, &MaxTextureUnits);
-    glGetIntegerv(GL_MAX_IMAGE_UNITS, &MaxImagesUnits);
-    CHECK_GL_ERROR("glGetIntegerv failed");
+    DEV_CHECK_ERR(m_FirstBinding[SHADER_RESOURCE_RANGE_CONSTANT_BUFFER] + m_BindingCount[SHADER_RESOURCE_RANGE_CONSTANT_BUFFER] <= static_cast<Uint32>(MaxUniformBlocks),
+                  "Number of bindings in range '", GetShaderResourceRangeName(SHADER_RESOURCE_RANGE_CONSTANT_BUFFER), "' is greater than maximum allowed (", MaxUniformBlocks, ").");
 
-    DEV_CHECK_ERR(m_FirstBinding[SHADER_RESOURCE_RANGE_CONSTANT_BUFFER] + m_BindingCount[SHADER_RESOURCE_RANGE_CONSTANT_BUFFER] <= static_cast<Uint32>(MaxUniformBlocks), "");
-    DEV_CHECK_ERR(m_FirstBinding[SHADER_RESOURCE_RANGE_TEXTURE_SRV] + m_BindingCount[SHADER_RESOURCE_RANGE_TEXTURE_SRV] <= static_cast<Uint32>(MaxTextureUnits), "");
-    DEV_CHECK_ERR(m_FirstBinding[SHADER_RESOURCE_RANGE_TEXTURE_UAV] + m_BindingCount[SHADER_RESOURCE_RANGE_TEXTURE_UAV] <= static_cast<Uint32>(MaxImagesUnits), "");
-    DEV_CHECK_ERR(m_FirstBinding[SHADER_RESOURCE_RANGE_BUFFER_UAV] + m_BindingCount[SHADER_RESOURCE_RANGE_BUFFER_UAV] <= static_cast<Uint32>(MaxStorageBlock), "");
+    GLint MaxStorageBlock = 0;
+    glGetIntegerv(GL_MAX_COMBINED_SHADER_STORAGE_BLOCKS, &MaxStorageBlock);
+    DEV_CHECK_ERR(m_FirstBinding[SHADER_RESOURCE_RANGE_BUFFER_UAV] + m_BindingCount[SHADER_RESOURCE_RANGE_BUFFER_UAV] <= static_cast<Uint32>(MaxStorageBlock),
+                  "Number of bindings in range '", GetShaderResourceRangeName(SHADER_RESOURCE_RANGE_BUFFER_UAV), "' is greater than maximum allowed (", MaxStorageBlock, ").");
+
+    GLint MaxTextureUnits = 0;
+    glGetIntegerv(GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS, &MaxTextureUnits);
+    DEV_CHECK_ERR(m_FirstBinding[SHADER_RESOURCE_RANGE_TEXTURE_SRV] + m_BindingCount[SHADER_RESOURCE_RANGE_TEXTURE_SRV] <= static_cast<Uint32>(MaxTextureUnits),
+                  "Number of bindings in range '", GetShaderResourceRangeName(SHADER_RESOURCE_RANGE_TEXTURE_SRV), "' is greater than maximum allowed (", MaxTextureUnits, ").");
+
+    GLint MaxImagesUnits = 0;
+    glGetIntegerv(GL_MAX_IMAGE_UNITS, &MaxImagesUnits);
+    DEV_CHECK_ERR(m_FirstBinding[SHADER_RESOURCE_RANGE_TEXTURE_UAV] + m_BindingCount[SHADER_RESOURCE_RANGE_TEXTURE_UAV] <= static_cast<Uint32>(MaxImagesUnits),
+                  "Number of bindings in range '", GetShaderResourceRangeName(SHADER_RESOURCE_RANGE_TEXTURE_UAV), "' is greater than maximum allowed (", MaxImagesUnits, ").");
+
+    CHECK_GL_ERROR("glGetIntegerv failed");
 #endif
 }
 
