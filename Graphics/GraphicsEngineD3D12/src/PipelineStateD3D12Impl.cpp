@@ -655,6 +655,7 @@ void PipelineStateD3D12Impl::InitRootSignature(const PipelineStateCreateInfo& Cr
 }
 
 
+#ifdef DILIGENT_DEVELOPMENT
 PipelineStateD3D12Impl::ResourceAttribution PipelineStateD3D12Impl::GetResourceAttribution(const char* Name, SHADER_TYPE Stage) const
 {
     const auto SignCount = GetResourceSignatureCount();
@@ -677,7 +678,6 @@ PipelineStateD3D12Impl::ResourceAttribution PipelineStateD3D12Impl::GetResourceA
     return ResourceAttribution{};
 }
 
-#ifdef DILIGENT_DEVELOPMENT
 void PipelineStateD3D12Impl::DvpValidateShaderResources(const ShaderD3D12Impl* pShader, const LocalRootSignatureD3D12* pLocalRootSig)
 {
     const auto& pShaderResources = pShader->GetShaderResources();

@@ -659,6 +659,9 @@ DILIGENT_BEGIN_INTERFACE(IPipelineState, IDeviceObject)
 
 
     /// Returns the number of pipeline resource signature used to created this pipeline.
+
+    /// \remarks  Result may not equal to PipelineStateCreateInfo::ResourceSignaturesCount.
+    ///           Number of resource signatures calculated as maximum number of BindingIndex plus one.
     VIRTUAL Uint32 METHOD(GetResourceSignatureCount)(THIS) CONST PURE;
 
     /// Returns pipeline resource signature at the give index.
