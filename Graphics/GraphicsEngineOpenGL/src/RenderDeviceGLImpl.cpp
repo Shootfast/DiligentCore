@@ -483,11 +483,14 @@ RenderDeviceGLImpl::RenderDeviceGLImpl(IReferenceCounters*       pRefCounters,
 
         if (Features.ComputeShaders)
         {
+#if GL_ARB_shader_storage_buffer_object
             glGetIntegerv(GL_MAX_COMBINED_SHADER_STORAGE_BLOCKS, &m_DeviceLimits.MaxStorageBlock);
             CHECK_GL_ERROR("glGetIntegerv(GL_MAX_COMBINED_SHADER_STORAGE_BLOCKS) failed");
-
+#endif
+#if GL_ARB_shader_image_load_store
             glGetIntegerv(GL_MAX_IMAGE_UNITS, &m_DeviceLimits.MaxImagesUnits);
             CHECK_GL_ERROR("glGetIntegerv(GL_MAX_IMAGE_UNITS) failed");
+#endif
         }
     }
 }
