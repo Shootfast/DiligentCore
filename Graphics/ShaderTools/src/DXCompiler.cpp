@@ -141,9 +141,17 @@ private:
 
     bool ValidateAndSign(DxcCreateInstanceProc CreateInstance, IDxcLibrary* library, CComPtr<IDxcBlob>& compiled, IDxcBlob** ppBlobOut) const;
 
-    static bool PatchDXIL(const TResourceBindingMap& ResourceMap, String& DXIL);
-    static void PatchResourceDeclaration(const TResourceBindingMap& ResourceMap, String& DXIL);
-    static void PatchResourceHandle(const TResourceBindingMap& ResourceMap, String& DXIL);
+    struct ResourceExtendedInfo
+    {
+        Uint32 SrcBindPoint = ~0u;
+        Uint32 SrcSpace     = ~0u;
+        Uint32 RecordId     = ~0u;
+    };
+    using TResourceMapExtendedInfo = std::vector<ResourceExtendedInfo>;
+
+    static bool PatchDXIL(const TResourceBindingMap& ResourceMap, TResourceMapExtendedInfo& ExtResInfo, String& DXIL);
+    static void PatchResourceDeclaration(const TResourceBindingMap& ResourceMap, TResourceMapExtendedInfo& ExtResInfo, String& DXIL);
+    static void PatchResourceHandle(const TResourceBindingMap& ResourceMap, TResourceMapExtendedInfo& ExtResInfo, String& DXIL);
 
 private:
     DxcCreateInstanceProc  m_pCreateInstance = nullptr;
@@ -824,29 +832,34 @@ bool DXCompilerImpl::RemapResourceBindings(const TResourceBindingMap& ResourceMa
         return false;
     }
 
+    TResourceMapExtendedInfo ResourceMapExt;
+    ResourceMapExt.resize(ResourceMap.size());
+
     for (auto& NameAndBinding : ResourceMap)
     {
         D3D12_SHADER_INPUT_BIND_DESC ResDesc = {};
         if (pShaderReflection->GetResourceBindingDescByName(NameAndBinding.first.GetStr(), &ResDesc) == S_OK)
         {
-            NameAndBinding.second.SrcBindPoint = ResDesc.BindPoint;
-            NameAndBinding.second.SrcSpace     = ResDesc.Space;
+            auto& Ext        = ResourceMapExt[NameAndBinding.second.UID];
+            Ext.SrcBindPoint = ResDesc.BindPoint;
+            Ext.SrcSpace     = ResDesc.Space;
             VERIFY_EXPR(ResDesc.BindCount == 0 || NameAndBinding.second.ArraySize >= ResDesc.BindCount);
 
+#    ifdef DILIGENT_DEBUG
             switch (ResDesc.Type)
             {
                 case D3D_SIT_CBUFFER:
-                    NameAndBinding.second.Type = ShaderResType::CBV;
+                    VERIFY_EXPR(NameAndBinding.second.Type == ShaderResType::CBV);
                     break;
                 case D3D_SIT_SAMPLER:
-                    NameAndBinding.second.Type = ShaderResType::Sampler;
+                    VERIFY_EXPR(NameAndBinding.second.Type == ShaderResType::Sampler);
                     break;
                 case D3D_SIT_TBUFFER:
                 case D3D_SIT_TEXTURE:
                 case D3D_SIT_STRUCTURED:
                 case D3D_SIT_BYTEADDRESS:
                 case D3D_SIT_RTACCELERATIONSTRUCTURE:
-                    NameAndBinding.second.Type = ShaderResType::SRV;
+                    VERIFY_EXPR(NameAndBinding.second.Type == ShaderResType::SRV);
                     break;
                 case D3D_SIT_UAV_RWTYPED:
                 case D3D_SIT_UAV_RWSTRUCTURED:
@@ -855,19 +868,20 @@ bool DXCompilerImpl::RemapResourceBindings(const TResourceBindingMap& ResourceMa
                 case D3D_SIT_UAV_CONSUME_STRUCTURED:
                 case D3D_SIT_UAV_RWSTRUCTURED_WITH_COUNTER:
                 case D3D_SIT_UAV_FEEDBACKTEXTURE:
-                    NameAndBinding.second.Type = ShaderResType::UAV;
+                    VERIFY_EXPR(NameAndBinding.second.Type == ShaderResType::UAV);
                     break;
                 default:
                     LOG_ERROR("Unknown shader resource type");
                     return false;
             }
+#    endif
         }
     }
 
     String dxilAsm;
     dxilAsm.assign(static_cast<const char*>(disasm->GetBufferPointer()), disasm->GetBufferSize());
 
-    if (!PatchDXIL(ResourceMap, dxilAsm))
+    if (!PatchDXIL(ResourceMap, ResourceMapExt, dxilAsm))
     {
         LOG_ERROR("Failed to patch resource bindings");
         return false;
@@ -920,12 +934,12 @@ bool DXCompilerImpl::RemapResourceBindings(const TResourceBindingMap& ResourceMa
 #endif // D3D12_SUPPORTED
 }
 
-bool DXCompilerImpl::PatchDXIL(const TResourceBindingMap& ResourceMap, String& DXIL)
+bool DXCompilerImpl::PatchDXIL(const TResourceBindingMap& ResourceMap, TResourceMapExtendedInfo& ExtResInfo, String& DXIL)
 {
     try
     {
-        PatchResourceDeclaration(ResourceMap, DXIL);
-        PatchResourceHandle(ResourceMap, DXIL);
+        PatchResourceDeclaration(ResourceMap, ExtResInfo, DXIL);
+        PatchResourceHandle(ResourceMap, ExtResInfo, DXIL);
         return true;
     }
     catch (...)
@@ -934,7 +948,7 @@ bool DXCompilerImpl::PatchDXIL(const TResourceBindingMap& ResourceMap, String& D
     }
 }
 
-void DXCompilerImpl::PatchResourceDeclaration(const TResourceBindingMap& ResourceMap, String& DXIL)
+void DXCompilerImpl::PatchResourceDeclaration(const TResourceBindingMap& ResourceMap, TResourceMapExtendedInfo& ExtResInfo, String& DXIL)
 {
 #define CHECK_PATCHING_ERROR(Cond, ...)                                                         \
     if (!(Cond))                                                                                \
@@ -1028,6 +1042,7 @@ void DXCompilerImpl::PatchResourceDeclaration(const TResourceBindingMap& Resourc
         //
         // !158 = !{i32 0, %"class.RWTexture2D<vector<float, 4> >"* @"\01?g_ColorBuffer@@3V?$RWTexture2D@V?$vector@M$03@@@@A", !"g_ColorBuffer", i32 -1, i32 -1, i32 1, i32 2, i1 false, i1 false, i1 false, !159}
 
+        auto&       Ext       = ExtResInfo[ResPair.second.UID];
         const auto* Name      = ResPair.first.GetStr();
         const auto  Space     = ResPair.second.Space;
         const auto  BindPoint = ResPair.second.BindPoint;
@@ -1061,17 +1076,17 @@ void DXCompilerImpl::PatchResourceDeclaration(const TResourceBindingMap& Resourc
 
         const Uint32 RecordId = static_cast<Uint32>(std::atoi(DXIL.c_str() + RecordIdStartPos));
 
-        VERIFY_EXPR(ResPair.second.UID == ~0u || ResPair.second.UID == RecordId);
-        ResPair.second.UID = RecordId;
+        VERIFY_EXPR(Ext.RecordId == ~0u || Ext.RecordId == RecordId);
+        Ext.RecordId = RecordId;
 
         // !"g_ColorBuffer", i32 -1, i32 -1,
         //                 ^
         pos = EndOfResTypeRecord + DxilName.length();
-        ReplaceRecord(pos, std::to_string(Space), Name, "space", ResPair.second.SrcSpace);
+        ReplaceRecord(pos, std::to_string(Space), Name, "space", Ext.SrcSpace);
 
         // !"g_ColorBuffer", i32 0, i32 -1,
         //                        ^
-        ReplaceRecord(pos, std::to_string(BindPoint), Name, "binding", ResPair.second.SrcBindPoint);
+        ReplaceRecord(pos, std::to_string(BindPoint), Name, "binding", Ext.SrcBindPoint);
 
         // !"g_ColorBuffer", i32 0, i32 1,
         //                               ^
@@ -1186,32 +1201,36 @@ void DXCompilerImpl::PatchResourceDeclaration(const TResourceBindingMap& Resourc
             continue;
         }
         // Search in resource map.
-        TResourceBindingMap::value_type const* ResPair = nullptr;
+        TResourceBindingMap::value_type const* pResPair = nullptr;
+        TResourceMapExtendedInfo::value_type*  pExt     = nullptr;
+
         for (auto& NameAndBinding : ResourceMap)
         {
-            if (NameAndBinding.second.SrcBindPoint == BindPoint &&
-                NameAndBinding.second.SrcSpace == Space &&
+            auto& Ext = ExtResInfo[NameAndBinding.second.UID];
+            if (Ext.SrcBindPoint == BindPoint &&
+                Ext.SrcSpace == Space &&
                 NameAndBinding.second.Type == ResType)
             {
-                ResPair = &NameAndBinding;
+                pResPair = &NameAndBinding;
+                pExt     = &Ext;
                 break;
             }
         }
-        CHECK_PATCHING_ERROR(ResPair != nullptr, "failed to find resource in ResourceMap");
+        CHECK_PATCHING_ERROR(pResPair != nullptr && pExt != nullptr, "failed to find resource in ResourceMap");
 
-        VERIFY_EXPR(ResPair->second.UID == ~0u || ResPair->second.UID == RecordId);
-        ResPair->second.UID = RecordId;
+        VERIFY_EXPR(pExt->RecordId == ~0u || pExt->RecordId == RecordId);
+        pExt->RecordId = RecordId;
 
         // Remap bindings.
         pos = BindingRecordStart;
 
         // !"", i32 -1, i32 -1,
         //    ^
-        ReplaceRecord(pos, std::to_string(ResPair->second.Space), ResPair->first.GetStr(), "space", ResPair->second.SrcSpace);
+        ReplaceRecord(pos, std::to_string(pResPair->second.Space), pResPair->first.GetStr(), "space", pExt->SrcSpace);
 
         // !"", i32 0, i32 -1,
         //           ^
-        ReplaceRecord(pos, std::to_string(ResPair->second.BindPoint), ResPair->first.GetStr(), "binding", ResPair->second.SrcBindPoint);
+        ReplaceRecord(pos, std::to_string(pResPair->second.BindPoint), pResPair->first.GetStr(), "binding", pExt->SrcBindPoint);
 
         // !"", i32 0, i32 1,
         //                  ^
@@ -1219,7 +1238,7 @@ void DXCompilerImpl::PatchResourceDeclaration(const TResourceBindingMap& Resourc
 #undef CHECK_PATCHING_ERROR
 }
 
-void DXCompilerImpl::PatchResourceHandle(const TResourceBindingMap& ResourceMap, String& DXIL)
+void DXCompilerImpl::PatchResourceHandle(const TResourceBindingMap& ResourceMap, TResourceMapExtendedInfo& ExtResInfo, String& DXIL)
 {
     // Patch createHandle command
     static const String        CallHandlePattern = " = call %dx.types.Handle @dx.op.createHandle(";
@@ -1241,7 +1260,7 @@ void DXCompilerImpl::PatchResourceHandle(const TResourceBindingMap& ResourceMap,
         return false;
     };
 
-    const auto ReplaceBindPoint = [&ResourceMap, &DXIL](Uint32 ResClass, Uint32 RangeId, size_t IndexStartPos, size_t IndexEndPos) //
+    const auto ReplaceBindPoint = [&](Uint32 ResClass, Uint32 RangeId, size_t IndexStartPos, size_t IndexEndPos) //
     {
         const String SrcIndexStr = DXIL.substr(IndexStartPos, IndexEndPos - IndexStartPos);
         VERIFY_EXPR(SrcIndexStr.front() >= '0' && SrcIndexStr.front() <= '9');
@@ -1249,28 +1268,32 @@ void DXCompilerImpl::PatchResourceHandle(const TResourceBindingMap& ResourceMap,
         const Uint32 SrcIndex = static_cast<Uint32>(std::stoi(SrcIndexStr));
         const auto   ResType  = ResClassToType[ResClass];
 
-        TResourceBindingMap::value_type const* ResPair = nullptr;
+        TResourceBindingMap::value_type const* pResPair = nullptr;
+        TResourceMapExtendedInfo::value_type*  pExt     = nullptr;
+
         for (auto& NameAndBinding : ResourceMap)
         {
-            if (NameAndBinding.second.UID == RangeId &&
+            auto& Ext = ExtResInfo[NameAndBinding.second.UID];
+            if (Ext.RecordId == RangeId &&
                 NameAndBinding.second.Type == ResType &&
-                SrcIndex >= NameAndBinding.second.SrcBindPoint &&
-                SrcIndex < NameAndBinding.second.SrcBindPoint + NameAndBinding.second.ArraySize)
+                SrcIndex >= Ext.SrcBindPoint &&
+                SrcIndex < Ext.SrcBindPoint + NameAndBinding.second.ArraySize)
             {
-                ResPair = &NameAndBinding;
+                pResPair = &NameAndBinding;
+                pExt     = &Ext;
                 break;
             }
         }
-        if (ResPair == nullptr)
+        if (pResPair == nullptr || pExt == nullptr)
             LOG_ERROR_AND_THROW("Failed to find resource in ResourceMap");
 
-        VERIFY_EXPR(SrcIndex >= ResPair->second.SrcBindPoint);
-        VERIFY_EXPR(ResPair->second.SrcBindPoint != ~0u);
+        VERIFY_EXPR(SrcIndex >= pExt->SrcBindPoint);
+        VERIFY_EXPR(pExt->SrcBindPoint != ~0u);
 
-        const Uint32 IndexOffset = SrcIndex - ResPair->second.SrcBindPoint;
-        VERIFY_EXPR((ResPair->second.BindPoint + IndexOffset) >= ResPair->second.BindPoint);
+        const Uint32 IndexOffset = SrcIndex - pExt->SrcBindPoint;
+        VERIFY_EXPR((pResPair->second.BindPoint + IndexOffset) >= pResPair->second.BindPoint);
 
-        const String NewIndexStr = std::to_string(ResPair->second.BindPoint + IndexOffset);
+        const String NewIndexStr = std::to_string(pResPair->second.BindPoint + IndexOffset);
         DXIL.replace(DXIL.begin() + IndexStartPos, DXIL.begin() + IndexEndPos, NewIndexStr);
     };
 

@@ -71,7 +71,7 @@ static void TestDXBCRemapping(const char* Source, const char* Entry, const char*
 
         String ResName{BindDesc.Name};
 
-        auto Iter = ResMap.find(HashMapStringKey{ResName.c_str()});
+        auto Iter = ResMap.find(ResName.c_str());
         if (Iter != ResMap.end())
         {
             EXPECT_EQ(BindDesc.BindPoint, Iter->second.BindPoint);
@@ -102,7 +102,7 @@ static void TestDXBCRemapping(const char* Source, const char* Entry, const char*
             ResName.resize(ArrStart);
         }
 
-        Iter = ResMap.find(HashMapStringKey{ResName.c_str()});
+        Iter = ResMap.find(ResName.c_str());
         if (Iter != ResMap.end())
         {
             EXPECT_LT(ArrayInd, Iter->second.ArraySize);
@@ -116,8 +116,8 @@ static void TestDXBCRemapping(const char* Source, const char* Entry, const char*
     }
 }
 
-using BindInfo = DXBCUtils::BindInfo;
-
+using BindInfo = ResourceBinding::BindInfo;
+using ResType  = ResourceBinding::ResType;
 
 TEST(DXBCUtils, PatchSM50)
 {
@@ -167,17 +167,24 @@ float4 PSMain(in float4 f4Position : SV_Position) : SV_Target
     const Uint32 Space = 0;
 
     DXBCUtils::TResourceBindingMap ResMap;
-    ResMap.emplace(HashMapStringKey{"g_Tex2D_1"}, BindInfo{Tex++, Space, 1});
-    ResMap.emplace(HashMapStringKey{"g_Tex2D_2"}, BindInfo{Tex++, Space, 1});
-    ResMap.emplace(HashMapStringKey{"g_Tex2D_3"}, BindInfo{Tex++, Space, 1});
-    ResMap.emplace(HashMapStringKey{"g_Tex2D_4"}, BindInfo{Tex++, Space, 1});
-    ResMap.emplace(HashMapStringKey{"g_InColorArray"}, BindInfo{Tex++, Space, 1});
-    ResMap.emplace(HashMapStringKey{"g_OutColorBuffer_1"}, BindInfo{UAV++, Space, 1});
-    ResMap.emplace(HashMapStringKey{"g_OutColorBuffer_2"}, BindInfo{UAV++, Space, 1});
-    ResMap.emplace(HashMapStringKey{"g_Sampler_1"}, BindInfo{Samp++, Space, 1});
-    ResMap.emplace(HashMapStringKey{"g_Sampler_2"}, BindInfo{Samp++, Space, 4});
-    ResMap.emplace(HashMapStringKey{"Constants1"}, BindInfo{Buff++, Space, 1});
-    ResMap.emplace(HashMapStringKey{"Constants2"}, BindInfo{Buff++, Space, 1});
+
+    const auto GetBindInfo = [&ResMap](Uint32 Register, Uint32 RegisterSpace, Uint32 ArraySize, ResType Type) {
+        return BindInfo{Register, RegisterSpace, ArraySize, Type, ResMap.size()};
+    };
+
+    // clang-format off
+    ResMap.emplace("g_Tex2D_1",          GetBindInfo(Tex++,  Space, 1, ResType::SRV    ));
+    ResMap.emplace("g_Tex2D_2",          GetBindInfo(Tex++,  Space, 1, ResType::SRV    ));
+    ResMap.emplace("g_Tex2D_3",          GetBindInfo(Tex++,  Space, 1, ResType::SRV    ));
+    ResMap.emplace("g_Tex2D_4",          GetBindInfo(Tex++,  Space, 1, ResType::SRV    ));
+    ResMap.emplace("g_InColorArray",     GetBindInfo(Tex++,  Space, 1, ResType::SRV    ));
+    ResMap.emplace("g_OutColorBuffer_1", GetBindInfo(UAV++,  Space, 1, ResType::UAV    ));
+    ResMap.emplace("g_OutColorBuffer_2", GetBindInfo(UAV++,  Space, 1, ResType::UAV    ));
+    ResMap.emplace("g_Sampler_1",        GetBindInfo(Samp++, Space, 1, ResType::Sampler));
+    ResMap.emplace("g_Sampler_2",        GetBindInfo(Samp++, Space, 4, ResType::Sampler));
+    ResMap.emplace("Constants1",         GetBindInfo(Buff++, Space, 1, ResType::CBV    ));
+    ResMap.emplace("Constants2",         GetBindInfo(Buff++, Space, 1, ResType::CBV    ));
+    // clang-format on
 
     TestDXBCRemapping(Source, "PSMain", "ps_5_0", ResMap);
 }
@@ -227,34 +234,41 @@ float4 PSMain(in float4 f4Position : SV_Position) : SV_Target
 )hlsl";
 
     DXBCUtils::TResourceBindingMap ResMap;
+
+    const auto GetBindInfo = [&ResMap](Uint32 Register, Uint32 RegisterSpace, Uint32 ArraySize, ResType Type) {
+        return BindInfo{Register, RegisterSpace, ArraySize, Type, ResMap.size()};
+    };
+
+    // clang-format off
     // space 0
     {
         const Uint32 Space = 0;
         Uint32       Tex   = 0;
         Uint32       Buff  = 0;
-        ResMap.emplace(HashMapStringKey{"g_Tex2D_2"}, BindInfo{Tex++, Space, 1});
-        ResMap.emplace(HashMapStringKey{"g_Tex2D_3"}, BindInfo{Tex++, Space, 1});
-        ResMap.emplace(HashMapStringKey{"Constants1"}, BindInfo{Buff++, Space, 1});
-        ResMap.emplace(HashMapStringKey{"Constants2"}, BindInfo{Buff++, Space, 1});
+        ResMap.emplace("g_Tex2D_2",  GetBindInfo(Tex++,  Space, 1, ResType::SRV));
+        ResMap.emplace("g_Tex2D_3",  GetBindInfo(Tex++,  Space, 1, ResType::SRV));
+        ResMap.emplace("Constants1", GetBindInfo(Buff++, Space, 1, ResType::CBV));
+        ResMap.emplace("Constants2", GetBindInfo(Buff++, Space, 1, ResType::CBV));
     }
     // space 1
     {
         const Uint32 Space = 1;
         Uint32       Samp  = 0;
         Uint32       UAV   = 0;
-        ResMap.emplace(HashMapStringKey{"g_OutColorBuffer_1"}, BindInfo{UAV++, Space, 1});
-        ResMap.emplace(HashMapStringKey{"g_OutColorBuffer_2"}, BindInfo{UAV++, Space, 1});
-        ResMap.emplace(HashMapStringKey{"g_Sampler_1"}, BindInfo{Samp++, Space, 1});
-        ResMap.emplace(HashMapStringKey{"g_Sampler_2"}, BindInfo{Samp++, Space, 4});
+        ResMap.emplace("g_OutColorBuffer_1", GetBindInfo(UAV++,  Space, 1, ResType::UAV    ));
+        ResMap.emplace("g_OutColorBuffer_2", GetBindInfo(UAV++,  Space, 1, ResType::UAV    ));
+        ResMap.emplace("g_Sampler_1",        GetBindInfo(Samp++, Space, 1, ResType::Sampler));
+        ResMap.emplace("g_Sampler_2",        GetBindInfo(Samp++, Space, 4, ResType::Sampler));
     }
     // space 2
     {
         const Uint32 Space = 2;
         Uint32       Tex   = 0;
-        ResMap.emplace(HashMapStringKey{"g_Tex2D_1"}, BindInfo{Tex++, Space, 1});
-        ResMap.emplace(HashMapStringKey{"g_Tex2D_4"}, BindInfo{Tex++, Space, 1});
-        ResMap.emplace(HashMapStringKey{"g_InColorArray"}, BindInfo{Tex++, Space, 1});
+        ResMap.emplace("g_Tex2D_1",      GetBindInfo(Tex++, Space, 1, ResType::SRV));
+        ResMap.emplace("g_Tex2D_4",      GetBindInfo(Tex++, Space, 1, ResType::SRV));
+        ResMap.emplace("g_InColorArray", GetBindInfo(Tex++, Space, 1, ResType::SRV));
     }
+    // clang-format on
 
     TestDXBCRemapping(Source, "PSMain", "ps_5_1", ResMap);
 }
@@ -291,10 +305,17 @@ float4 PSMain(in float4 f4Position : SV_Position) : SV_Target
 )hlsl";
 
     DXBCUtils::TResourceBindingMap ResMap;
-    ResMap.emplace(HashMapStringKey{"g_Sampler"}, BindInfo{11, 3, 1});
-    ResMap.emplace(HashMapStringKey{"g_Tex2D_StatArray"}, BindInfo{22, 3, 8});
-    ResMap.emplace(HashMapStringKey{"g_Tex2D_DynArray"}, BindInfo{0, 2, 100});
-    ResMap.emplace(HashMapStringKey{"Constants"}, BindInfo{44, 1, 1});
+
+    const auto GetBindInfo = [&ResMap](Uint32 Register, Uint32 RegisterSpace, Uint32 ArraySize, ResType Type) {
+        return BindInfo{Register, RegisterSpace, ArraySize, Type, ResMap.size()};
+    };
+
+    // clang-format off
+    ResMap.emplace("g_Sampler",         GetBindInfo(11, 3,   1, ResType::Sampler));
+    ResMap.emplace("g_Tex2D_StatArray", GetBindInfo(22, 3,   8, ResType::SRV    ));
+    ResMap.emplace("g_Tex2D_DynArray",  GetBindInfo( 0, 2, 100, ResType::SRV    ));
+    ResMap.emplace("Constants",         GetBindInfo(44, 1,   1, ResType::CBV    ));
+    // clang-format on
 
     TestDXBCRemapping(Source, "PSMain", "ps_5_1", ResMap);
 }

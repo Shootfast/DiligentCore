@@ -48,22 +48,17 @@ struct ResourceBinding
 
     struct BindInfo
     {
-        // new bind point & space
-        Uint32 BindPoint = ~0u;
-        Uint32 Space     = ~0u;
-        Uint32 ArraySize = 0;
+        const Uint32  BindPoint;
+        const Uint32  Space;
+        const Uint32  ArraySize;
+        const ResType Type : 3;
+        const Uint32  UID : 29; // unique index to store additional information, must be less than TMap::size()
 
-        // current (previous) bind point & space
-        mutable Uint32  SrcBindPoint = ~0u;
-        mutable Uint32  SrcSpace     = ~0u;
-        mutable ResType Type         = ResType::Count;
-        mutable Uint32  UID          = ~0u; // Unique resource record ID
-
-        BindInfo() {}
-
-        BindInfo(Uint32 _BindPoint, Uint32 _Space, Uint32 _ArraySize) :
-            BindPoint{_BindPoint}, Space{_Space}, ArraySize{_ArraySize}
-        {}
+        BindInfo(Uint32 _BindPoint, Uint32 _Space, Uint32 _ArraySize, ResType _Type, size_t _UID) :
+            BindPoint{_BindPoint}, Space{_Space}, ArraySize{_ArraySize}, Type{_Type}, UID{static_cast<Uint32>(_UID)}
+        {
+            VERIFY_EXPR(_UID == UID);
+        }
     };
 
     /// A mapping from the resource name to the binding (shader register).

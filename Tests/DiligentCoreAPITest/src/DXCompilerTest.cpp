@@ -112,6 +112,8 @@ const wchar_t* DXCArgs[] = {
 #endif
 };
 
+using ResType = ResourceBinding::ResType;
+
 TEST(DXCompilerTest, Reflection)
 {
     auto pDXC = CreateDXCompiler(DXCompilerTarget::Direct3D12, nullptr);
@@ -200,12 +202,19 @@ TEST(DXCompilerTest, RemapBindingsRG)
     ASSERT_TRUE(pDXIL) << (pOutput ? std::string{reinterpret_cast<const char*>(pOutput->GetBufferPointer()), pOutput->GetBufferSize()} : "");
 
     IDXCompiler::TResourceBindingMap BindigMap;
-    BindigMap["g_TLAS"]        = {15, 0, 1};
-    BindigMap["g_ColorBuffer"] = {7, 1, 1};
-    BindigMap["g_Tex"]         = {101, 0, 2};
-    BindigMap["g_TexSampler"]  = {0, 2, 1};
-    BindigMap["cbConstants"]   = {9, 0, 1};
-    BindigMap["g_AnotherRes"]  = {567, 5, 1};
+
+    const auto GetBindInfo = [&BindigMap](Uint32 Register, Uint32 RegisterSpace, Uint32 ArraySize, ResType Type) {
+        return ResourceBinding::BindInfo{Register, RegisterSpace, ArraySize, Type, BindigMap.size()};
+    };
+
+    // clang-format off
+    BindigMap.emplace("g_TLAS",        GetBindInfo( 15, 0, 1, ResType::SRV    ));
+    BindigMap.emplace("g_ColorBuffer", GetBindInfo(  7, 1, 1, ResType::UAV    ));
+    BindigMap.emplace("g_Tex",         GetBindInfo(101, 0, 2, ResType::SRV    ));
+    BindigMap.emplace("g_TexSampler",  GetBindInfo(  0, 2, 1, ResType::Sampler));
+    BindigMap.emplace("cbConstants",   GetBindInfo(  9, 0, 1, ResType::CBV    ));
+    BindigMap.emplace("g_AnotherRes",  GetBindInfo(567, 5, 1, ResType::CBV    ));
+    // clang-format on
     CComPtr<IDxcBlob> pRemappedDXIL;
     pDXC->RemapResourceBindings(BindigMap, pDXIL, &pRemappedDXIL);
     ASSERT_TRUE(pRemappedDXIL);
@@ -237,11 +246,14 @@ TEST(DXCompilerTest, RemapBindingsRG)
         EXPECT_EQ(BindDesc.Space, 0U);
     }
 
-    BindigMap["g_TLAS"]        = {0, 0, 1};
-    BindigMap["g_ColorBuffer"] = {1, 0, 1};
-    BindigMap["g_Tex"]         = {2, 0, 2};
-    BindigMap["g_TexSampler"]  = {0, 1, 1};
-    BindigMap["cbConstants"]   = {1, 1, 1};
+    // clang-format off
+    BindigMap.clear();
+    BindigMap.emplace("g_TLAS",        GetBindInfo(0, 0, 1, ResType::SRV    ));
+    BindigMap.emplace("g_ColorBuffer", GetBindInfo(1, 0, 1, ResType::UAV    ));
+    BindigMap.emplace("g_Tex",         GetBindInfo(2, 0, 2, ResType::SRV    ));
+    BindigMap.emplace("g_TexSampler",  GetBindInfo(0, 1, 1, ResType::Sampler));
+    BindigMap.emplace("cbConstants",   GetBindInfo(1, 1, 1, ResType::CBV    ));
+    // clang-format on
     CComPtr<IDxcBlob> pRemappedDXIL2;
     pDXC->RemapResourceBindings(BindigMap, pRemappedDXIL, &pRemappedDXIL2);
     ASSERT_TRUE(pRemappedDXIL2);
@@ -317,12 +329,19 @@ float4 main() : SV_TARGET
     ASSERT_TRUE(pDXIL) << (pOutput ? std::string{reinterpret_cast<const char*>(pOutput->GetBufferPointer()), pOutput->GetBufferSize()} : "");
 
     IDXCompiler::TResourceBindingMap BindigMap;
-    BindigMap["g_Tex1"]       = {101, 0, 1};
-    BindigMap["g_Tex2"]       = {22, 0, 1};
-    BindigMap["g_TexSampler"] = {0, 0, 1};
-    BindigMap["cbConstants1"] = {9, 0, 1};
-    BindigMap["cbConstants2"] = {3, 0, 1};
-    BindigMap["g_AnotherRes"] = {567, 0, 1};
+
+    const auto GetBindInfo = [&BindigMap](Uint32 Register, Uint32 RegisterSpace, Uint32 ArraySize, ResType Type) {
+        return ResourceBinding::BindInfo{Register, RegisterSpace, ArraySize, Type, BindigMap.size()};
+    };
+
+    // clang-format off
+    BindigMap.emplace("g_Tex1",       GetBindInfo(101, 0, 1, ResType::SRV    ));
+    BindigMap.emplace("g_Tex2",       GetBindInfo( 22, 0, 1, ResType::SRV    ));
+    BindigMap.emplace("g_TexSampler", GetBindInfo(  0, 0, 1, ResType::Sampler));
+    BindigMap.emplace("cbConstants1", GetBindInfo(  9, 0, 1, ResType::CBV    ));
+    BindigMap.emplace("cbConstants2", GetBindInfo(  3, 0, 1, ResType::CBV    ));
+    BindigMap.emplace("g_AnotherRes", GetBindInfo(567, 0, 1, ResType::CBV    ));
+    // clang-format on
     CComPtr<IDxcBlob> pRemappedDXIL;
     pDXC->RemapResourceBindings(BindigMap, pDXIL, &pRemappedDXIL);
     ASSERT_TRUE(pRemappedDXIL);
@@ -355,13 +374,15 @@ float4 main() : SV_TARGET
     }
 
     BindigMap.clear();
-    BindigMap["g_Tex1"]       = {0, 2, 1};
-    BindigMap["g_Tex2"]       = {55, 4, 1};
-    BindigMap["g_TexSampler"] = {1, 2, 1};
-    BindigMap["cbConstants1"] = {8, 3, 1};
-    BindigMap["cbConstants2"] = {4, 6, 1};
-    BindigMap["g_AnotherRes"] = {567, 0, 1};
-    pRemappedDXIL             = nullptr;
+    // clang-format off
+    BindigMap.emplace("g_Tex1",       GetBindInfo(  0, 2, 1, ResType::SRV    ));
+    BindigMap.emplace("g_Tex2",       GetBindInfo( 55, 4, 1, ResType::SRV    ));
+    BindigMap.emplace("g_TexSampler", GetBindInfo(  1, 2, 1, ResType::Sampler));
+    BindigMap.emplace("cbConstants1", GetBindInfo(  8, 3, 1, ResType::CBV    ));
+    BindigMap.emplace("cbConstants2", GetBindInfo(  4, 6, 1, ResType::CBV    ));
+    BindigMap.emplace("g_AnotherRes", GetBindInfo(567, 0, 1, ResType::SRV    ));
+    // clang-format on
+    pRemappedDXIL = nullptr;
     pDXC->RemapResourceBindings(BindigMap, pDXIL, &pRemappedDXIL);
     ASSERT_TRUE(pRemappedDXIL);
 
@@ -453,16 +474,23 @@ float4 main(in float4 f4Position : SV_Position) : SV_TARGET
     ASSERT_TRUE(pDXIL) << (pOutput ? std::string{reinterpret_cast<const char*>(pOutput->GetBufferPointer()), pOutput->GetBufferSize()} : "");
 
     IDXCompiler::TResourceBindingMap BindigMap;
-    BindigMap["g_Tex"]          = {101, 0, 4};
-    BindigMap["g_Tex3D"]        = {22, 0, 1};
-    BindigMap["g_TexSampler"]   = {0, 0, 1};
-    BindigMap["g_Buffer1"]      = {9, 0, 5};
-    BindigMap["g_Buffer2"]      = {0, 1, 10};
-    BindigMap["g_ColorBuffer1"] = {180, 0, 1};
-    BindigMap["g_ColorBuffer2"] = {333, 0, 1};
-    BindigMap["g_ColorBuffer3"] = {1, 0, 1};
-    BindigMap["Constants"]      = {8, 0, 1};
-    BindigMap["g_AnotherRes"]   = {567, 0, 1};
+
+    const auto GetBindInfo = [&BindigMap](Uint32 Register, Uint32 RegisterSpace, Uint32 ArraySize, ResType Type) {
+        return ResourceBinding::BindInfo{Register, RegisterSpace, ArraySize, Type, BindigMap.size()};
+    };
+
+    // clang-format off
+    BindigMap.emplace("g_Tex",          GetBindInfo(101, 0,  4, ResType::SRV    ));
+    BindigMap.emplace("g_Tex3D",        GetBindInfo( 22, 0,  1, ResType::SRV    ));
+    BindigMap.emplace("g_TexSampler",   GetBindInfo(  0, 0,  1, ResType::Sampler));
+    BindigMap.emplace("g_Buffer1",      GetBindInfo(  9, 0,  5, ResType::SRV    ));
+    BindigMap.emplace("g_Buffer2",      GetBindInfo(  0, 1, 10, ResType::UAV    ));
+    BindigMap.emplace("g_ColorBuffer1", GetBindInfo(180, 0,  1, ResType::UAV    ));
+    BindigMap.emplace("g_ColorBuffer2", GetBindInfo(333, 0,  1, ResType::UAV    ));
+    BindigMap.emplace("g_ColorBuffer3", GetBindInfo(  1, 0,  1, ResType::UAV    ));
+    BindigMap.emplace("Constants",      GetBindInfo(  8, 0,  1, ResType::CBV    ));
+    BindigMap.emplace("g_AnotherRes",   GetBindInfo(567, 0,  1, ResType::UAV    ));
+    // clang-format on
     CComPtr<IDxcBlob> pRemappedDXIL;
     pDXC->RemapResourceBindings(BindigMap, pDXIL, &pRemappedDXIL);
     ASSERT_TRUE(pRemappedDXIL);
@@ -511,17 +539,19 @@ float4 main(in float4 f4Position : SV_Position) : SV_TARGET
     }
 
     BindigMap.clear();
-    BindigMap["g_Tex"]          = {77, 1, 4};
-    BindigMap["g_Tex3D"]        = {90, 1, 1};
-    BindigMap["g_TexSampler"]   = {0, 1, 1};
-    BindigMap["g_Buffer1"]      = {15, 6, 5};
-    BindigMap["g_Buffer2"]      = {2, 7, 100};
-    BindigMap["g_ColorBuffer1"] = {33, 6, 1};
-    BindigMap["g_ColorBuffer2"] = {10, 100, 1};
-    BindigMap["g_ColorBuffer3"] = {11, 100, 1};
-    BindigMap["Constants"]      = {9, 3, 1};
-    BindigMap["g_AnotherRes"]   = {567, 0, 1};
-    pRemappedDXIL               = nullptr;
+    // clang-format off
+    BindigMap.emplace("g_Tex",          GetBindInfo( 77,   1,   4, ResType::SRV    ));
+    BindigMap.emplace("g_Tex3D",        GetBindInfo( 90,   1,   1, ResType::SRV    ));
+    BindigMap.emplace("g_TexSampler",   GetBindInfo(  0,   1,   1, ResType::Sampler));
+    BindigMap.emplace("g_Buffer1",      GetBindInfo( 15,   6,   5, ResType::SRV    ));
+    BindigMap.emplace("g_Buffer2",      GetBindInfo(  2,   7, 100, ResType::UAV    ));
+    BindigMap.emplace("g_ColorBuffer1", GetBindInfo( 33,   6,   1, ResType::UAV    ));
+    BindigMap.emplace("g_ColorBuffer2", GetBindInfo( 10, 100,   1, ResType::UAV    ));
+    BindigMap.emplace("g_ColorBuffer3", GetBindInfo( 11, 100,   1, ResType::UAV    ));
+    BindigMap.emplace("Constants",      GetBindInfo(  9,   3,   1, ResType::CBV    ));
+    BindigMap.emplace("g_AnotherRes",   GetBindInfo(567,   0,   1, ResType::Sampler));
+    // clang-format on
+    pRemappedDXIL = nullptr;
     pDXC->RemapResourceBindings(BindigMap, pDXIL, &pRemappedDXIL);
     ASSERT_TRUE(pRemappedDXIL);
 

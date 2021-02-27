@@ -338,6 +338,7 @@ void PipelineResourceSignatureD3D12Impl::AllocateRootParameters(StaticResCacheTb
             const auto IsArray           = ResDesc.ArraySize != 1;
 
             d3d12RootParamType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+            static_assert(SHADER_RESOURCE_TYPE_LAST == SHADER_RESOURCE_TYPE_ACCEL_STRUCT, "Please update the switch below to handle the new shader resource type");
             switch (ResDesc.ResourceType)
             {
                 case SHADER_RESOURCE_TYPE_CONSTANT_BUFFER:
@@ -624,6 +625,7 @@ void PipelineResourceSignatureD3D12Impl::CommitRootViews(const CommitCacheResour
         VERIFY_EXPR(BufferGPUAddress != 0);
 
         auto* const pd3d12CmdList = CommitAttribs.Ctx.GetCommandList();
+        static_assert(SHADER_RESOURCE_TYPE_LAST == SHADER_RESOURCE_TYPE_ACCEL_STRUCT, "Please update the switch below to handle the new shader resource type");
         switch (Res.Type)
         {
             case SHADER_RESOURCE_TYPE_CONSTANT_BUFFER:
@@ -777,11 +779,30 @@ void PipelineResourceSignatureD3D12Impl::UpdateShaderResourceBindingMap(Resource
 
         if ((ResDesc.ShaderStages & ShaderStage) != 0)
         {
+            ResourceBinding::ResType ResType = ResourceBinding::ResType::Count;
+            static_assert(SHADER_RESOURCE_TYPE_LAST == SHADER_RESOURCE_TYPE_ACCEL_STRUCT, "Please update the switch below to handle the new shader resource type");
+            switch (ResDesc.ResourceType)
+            {
+                // clang-format off
+                case SHADER_RESOURCE_TYPE_CONSTANT_BUFFER:  ResType = ResourceBinding::ResType::CBV;     break;
+                case SHADER_RESOURCE_TYPE_TEXTURE_SRV:      ResType = ResourceBinding::ResType::SRV;     break;
+                case SHADER_RESOURCE_TYPE_BUFFER_SRV:       ResType = ResourceBinding::ResType::SRV;     break;
+                case SHADER_RESOURCE_TYPE_TEXTURE_UAV:      ResType = ResourceBinding::ResType::UAV;     break;
+                case SHADER_RESOURCE_TYPE_BUFFER_UAV:       ResType = ResourceBinding::ResType::UAV;     break;
+                case SHADER_RESOURCE_TYPE_SAMPLER:          ResType = ResourceBinding::ResType::Sampler; break;
+                case SHADER_RESOURCE_TYPE_ACCEL_STRUCT:     ResType = ResourceBinding::ResType::SRV;     break;
+                // clang-format on
+                default:
+                    UNEXPECTED("Unknown shader resource type");
+            }
+
             ResourceBinding::BindInfo BindInfo //
                 {
                     Attribs.Register,
                     Attribs.Space + BaseRegisterSpace,
-                    ResDesc.ArraySize //
+                    ResDesc.ArraySize,
+                    ResType,
+                    ResourceMap.size() //
                 };
             auto IsUnique = ResourceMap.emplace(HashMapStringKey{ResDesc.Name}, BindInfo).second;
             VERIFY(IsUnique, "Shader resource '", ResDesc.Name,
@@ -805,7 +826,9 @@ void PipelineResourceSignatureD3D12Impl::UpdateShaderResourceBindingMap(Resource
                 {
                     SampAttr.ShaderRegister,
                     SampAttr.RegisterSpace + BaseRegisterSpace,
-                    SampAttr.ArraySize //
+                    SampAttr.ArraySize,
+                    ResourceBinding::ResType::Sampler,
+                    ResourceMap.size() //
                 };
 
             auto it_inserted = ResourceMap.emplace(HashMapStringKey{SampName}, BindInfo);
@@ -1342,6 +1365,7 @@ bool PipelineResourceSignatureD3D12Impl::DvpValidateCommittedResource(const D3DS
 
         const auto& CachedRes = RootTable.GetResource(OffsetFromTableStart);
 
+        static_assert(SHADER_RESOURCE_TYPE_LAST == SHADER_RESOURCE_TYPE_ACCEL_STRUCT, "Please update the switch below to handle the new shader resource type");
         switch (ResDesc.ResourceType)
         {
             case SHADER_RESOURCE_TYPE_TEXTURE_SRV:
